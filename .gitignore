@@ -170,3 +170,6 @@ hs_err_pid*
 # ==================== IDEA and PyCharm ====================
 .idea
 *.iml
+
+# ==================== Test Results ====================
+Key Frame Extraction - Java/Results/
