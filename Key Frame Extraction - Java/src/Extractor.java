@@ -14,8 +14,8 @@ public class Extractor implements AutoCloseable {
     private String WINDOW_NAME;
     private int WIDTH;
     private int HEIGHT;
-    private static double SHOT_BOUNDARY_THRESHOLD = 2E-7;
-    private static double KEY_FRAME_INVAR_THRESHOLD = 1E-7; //用于通过矩不变量法进行关键帧提取的阈值
+    private static double SHOT_BOUNDARY_THRESHOLD = 2E-7; //利用矩不变量法进行镜头边缘检测的阈值，推荐设为2E-7
+    private static double KEY_FRAME_INVAR_THRESHOLD = 1E-5; //用于通过矩不变量法进行关键帧提取的阈值，推荐设为1E-5
     private String KEY_FRAMES_FOLDER;
     private int N_FRAME;
 
@@ -29,7 +29,7 @@ public class Extractor implements AutoCloseable {
         ArrayList<double[]> momentInvarVecs = null;
         Mat frame = new Mat();
         boolean successful;
-        try (Extractor extractor = new Extractor("Video.mp4", "Extractor", "./Results/Key Frames/");) {
+        try (Extractor extractor = new Extractor("Video - Complete.mp4", "Extractor", "./Results/Key Frames/");) {
             momentInvarVecs = extractor.computeMomentInvarVecs();
             boundaryFrameIDs = extractor.shotBoundaryDetection(momentInvarVecs);
             extractor.keyFrameExtraction_Invar(boundaryFrameIDs, momentInvarVecs);
@@ -174,6 +174,7 @@ public class Extractor implements AutoCloseable {
         }
     }
 
+    //todo: 自适应暗帧检测
     private boolean isDarkFrame(Mat gray) {
         long sum = 0;
         for (int y = 0; y <= HEIGHT - 1; y++) {
@@ -181,7 +182,7 @@ public class Extractor implements AutoCloseable {
                 sum += gray.get(y, x)[0];
             }
         }
-        return sum <= 255 / 6 * WIDTH * HEIGHT;
+        return sum <= 255 / 8 * WIDTH * HEIGHT;
     }
 
     //计算图像矩
@@ -231,7 +232,7 @@ public class Extractor implements AutoCloseable {
 
     //计算每一帧的矩不变向量
     private ArrayList<double[]> computeMomentInvarVecs() throws InterruptedException, TimeoutException {
-        System.out.print("Computing moment invariant vectors, stand by");
+        /*System.out.print("Computing moment invariant vectors, stand by");
         ArrayList<double[]> vecs = new ArrayList<>();
         int frameID = 0;
         int dotBoundary = N_FRAME / 5;
@@ -249,6 +250,21 @@ public class Extractor implements AutoCloseable {
             frameID++;
         }
         System.out.println("OK");
+        return vecs;*/
+
+        ArrayList<double[]> vecs = new ArrayList<>();
+        Mat frame = new Mat();
+        Mat gray = new Mat();
+        boolean successful = cap.read(frame);
+        while (successful) {
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            Moments moments = Imgproc.moments(gray);
+            Mat hu = new Mat();
+            Imgproc.HuMoments(moments, hu);
+            double[] vec = {hu.get(0, 0)[0], hu.get(1, 0)[0], hu.get(2, 0)[0]};
+            vecs.add(vec);
+            successful = cap.read(frame);
+        }
         return vecs;
     }
 
