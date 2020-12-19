@@ -15,7 +15,7 @@ public class Extractor implements AutoCloseable {
     private int WIDTH;
     private int HEIGHT;
     private static double SHOT_BOUNDARY_THRESHOLD = 2E-7; //利用矩不变量法进行镜头边缘检测的阈值，推荐设为2E-7
-    private static double KEY_FRAME_INVAR_THRESHOLD = 1E-5; //用于通过矩不变量法进行关键帧提取的阈值，推荐设为1E-5
+    private static double KEY_FRAME_INVAR_THRESHOLD = 3E-6; //用于通过矩不变量法进行关键帧提取的阈值，推荐设为3E-6
     private String KEY_FRAMES_FOLDER;
     private int N_FRAME;
 
