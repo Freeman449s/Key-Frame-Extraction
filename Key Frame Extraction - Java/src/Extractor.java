@@ -137,7 +137,6 @@ public class Extractor implements AutoCloseable {
         System.out.println("OK");
     }
 
-
     //镜头内关键帧提取，基于矩不变量
     //直接在指定文件夹内写入关键帧，无返回值
     private void inShotKeyFrameExtraction_Invar(ArrayList<double[]> vecs, int left, int right) throws InterruptedException, TimeoutException {
