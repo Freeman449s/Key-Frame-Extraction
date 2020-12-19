@@ -15,6 +15,7 @@ public class Extractor implements AutoCloseable {
     private int WIDTH;
     private int HEIGHT;
     private static double SHOT_BOUNDARY_THRESHOLD = 2E-7;
+    private static double KEY_FRAME_INVAR_THRESHOLD = 1E-7; //用于通过矩不变量法进行关键帧提取的阈值
     private String KEY_FRAMES_FOLDER;
     private int N_FRAME;
 
@@ -28,23 +29,10 @@ public class Extractor implements AutoCloseable {
         ArrayList<double[]> momentInvarVecs = null;
         Mat frame = new Mat();
         boolean successful;
-        try (Extractor extractor = new Extractor("Video.mp4", "Extractor", "./Key Frames/");) {
+        try (Extractor extractor = new Extractor("Video.mp4", "Extractor", "./Results/Key Frames/");) {
             momentInvarVecs = extractor.computeMomentInvarVecs();
             boundaryFrameIDs = extractor.shotBoundaryDetection(momentInvarVecs);
-            //显示提取出的所有镜头边缘
-            for (int i = 0; i <= boundaryFrameIDs.size() - 1; i++) {
-                int frameID = boundaryFrameIDs.get(i);
-                extractor.cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
-                successful = extractor.cap.read(frame);
-                if (successful) Imgcodecs.imwrite("Results/Boundaries/" + frameID + ".jpg", frame);
-            }
-            //选取两个边界帧之间的中间帧输出，用于评估镜头检测结果
-            for (int i = 0; i <= boundaryFrameIDs.size() - 2; i++) {
-                int frameID = (boundaryFrameIDs.get(i) + boundaryFrameIDs.get(i + 1)) / 2;
-                extractor.cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
-                successful = extractor.cap.read(frame);
-                if (successful) Imgcodecs.imwrite("Results/Boundary Centers/" + frameID + ".jpg", frame);
-            }
+            extractor.keyFrameExtraction_Invar(boundaryFrameIDs, momentInvarVecs);
         }
         catch (Exception ex) {
             System.out.println("Error occured when trying to detect shot boundaries. Error message:");
@@ -55,6 +43,8 @@ public class Extractor implements AutoCloseable {
 
     }
 
+    //构造函数
+    //keyFramesFolder末尾应有分隔符"/"或"\\"
     public Extractor(String filePath, String windowName, String keyFramesFolder) {
         FILE_PATH = filePath;
         cap = new VideoCapture(FILE_PATH);
@@ -70,7 +60,8 @@ public class Extractor implements AutoCloseable {
         cap.release();
     }
 
-    public ArrayList<Integer> shotBoundaryDetection(ArrayList<double[]> vecs) throws IOException, InterruptedException, TimeOutException {
+    //镜头边缘检测
+    public ArrayList<Integer> shotBoundaryDetection(ArrayList<double[]> vecs) throws IOException, InterruptedException, TimeoutException {
         ArrayList<Integer> boundaryFrameIDs = new ArrayList<>();
         boundaryFrameIDs.add(0);
         int lastBoundaryID = 0;
@@ -86,15 +77,19 @@ public class Extractor implements AutoCloseable {
             }
         }
         return boundaryFrameIDs;
-        /*Mat frame = new Mat();
+        /*ArrayList<Integer> boundaryFrameIDs = new ArrayList<>();
+        boundaryFrameIDs.add(0);
+        Mat frame = new Mat();
         Mat gray = new Mat();
-        Mat lastGray = new Mat();
+        int frameID = 0;
+        int lastBoundaryID = 0;
+        double[] vecOfLast;
+        double[] vecOfThis;
         //取第一帧作为边界帧，记录其矩不变向量
         boolean successful = cap.read(frame);
-        frameID++;
         if (successful) {
-            Imgproc.cvtColor(frame, lastGray, Imgproc.COLOR_BGR2GRAY);
-            vecOfLast = computeMomentInvarVec(lastGray, frameID);
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            vecOfLast = computeMomentInvarVec(gray, frameID);
             successful = cap.read(frame);
             frameID++;
         }
@@ -108,7 +103,6 @@ public class Extractor implements AutoCloseable {
                 vecOfThis = computeMomentInvarVec(gray, frameID);
                 momentInvarDist = computeMomentInvarDist(vecOfLast, vecOfThis);
                 vecOfLast = vecOfThis;
-                lastGray = gray;
             }
             catch (Exception ex) { //捕获到InterruptedException或TimeOutException时放弃此帧
                 continue;
@@ -119,7 +113,65 @@ public class Extractor implements AutoCloseable {
             }
             successful = cap.read(frame);
             frameID++;
-        }*/
+        }
+        return boundaryFrameIDs;*/
+    }
+
+    //基于矩不变量提取关键帧
+    public void keyFrameExtraction_Invar(ArrayList<Integer> boundaryIDs, ArrayList<double[]> vecs) throws InterruptedException, TimeoutException {
+        System.out.print("Extracting key frames");
+        int dotBoundary = boundaryIDs.size() / 5;
+        int nDotsPrinted = 0;
+        //各个镜头独立处理
+        for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
+            inShotKeyFrameExtraction_Invar(vecs, boundaryIDs.get(i), boundaryIDs.get(i + 1));
+            if (i >= dotBoundary) {
+                System.out.print(".");
+                dotBoundary += boundaryIDs.size() / 5;
+                nDotsPrinted++;
+            }
+        }
+        if (nDotsPrinted < 5) System.out.print(".");
+        //单独处理最后一个镜头
+        inShotKeyFrameExtraction_Invar(vecs, boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME);
+        System.out.println("OK");
+    }
+
+
+    //镜头内关键帧提取，基于矩不变量
+    //直接在指定文件夹内写入关键帧，无返回值
+    private void inShotKeyFrameExtraction_Invar(ArrayList<double[]> vecs, int left, int right) throws InterruptedException, TimeoutException {
+        Mat frame = new Mat();
+        Mat gray = new Mat();
+        //第一帧作为关键帧
+        int lastKeyFrameID = left;
+        cap.set(CVConsts.CAP_PROP_POS_FRAMES, lastKeyFrameID);
+        boolean successful = cap.read(frame);
+        //如果读取第一帧不成功，则持续读帧，直到读帧成功或进入下一个镜头
+        while (!successful) {
+            lastKeyFrameID++;
+            if (lastKeyFrameID >= right) break;
+            successful = cap.read(frame);
+        }
+        if (lastKeyFrameID >= right) return; //当前镜头内无法读取任何一帧
+        if (!isDarkFrame(frame)) Imgcodecs.imwrite(KEY_FRAMES_FOLDER + lastKeyFrameID + ".jpg", frame);
+        double[] vecOfLastKeyFrame = vecs.get(lastKeyFrameID);
+        //遍历镜头中的各帧
+        for (int i = lastKeyFrameID + 1; i <= right - 1; i++) {
+            double[] vecOfThis = vecs.get(i);
+            double dist = computeMomentInvarDist(vecOfLastKeyFrame, vecOfThis);
+            if (dist > KEY_FRAME_INVAR_THRESHOLD && i - lastKeyFrameID > FPS / 2) {
+                cap.set(CVConsts.CAP_PROP_POS_FRAMES, i);
+                successful = cap.read(frame);
+                if (!successful) continue;
+                Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+                if (!isDarkFrame(gray)) {
+                    Imgcodecs.imwrite(KEY_FRAMES_FOLDER + i + ".jpg", frame);
+                    lastKeyFrameID = i;
+                    vecOfLastKeyFrame = vecOfThis;
+                }
+            }
+        }
     }
 
     private boolean isDarkFrame(Mat gray) {
@@ -129,7 +181,7 @@ public class Extractor implements AutoCloseable {
                 sum += gray.get(y, x)[0];
             }
         }
-        return sum <= 255 / 4 * WIDTH * HEIGHT;
+        return sum <= 255 / 6 * WIDTH * HEIGHT;
     }
 
     //计算图像矩
@@ -178,25 +230,30 @@ public class Extractor implements AutoCloseable {
     }
 
     //计算每一帧的矩不变向量
-    private ArrayList<double[]> computeMomentInvarVecs() throws InterruptedException, TimeOutException {
+    private ArrayList<double[]> computeMomentInvarVecs() throws InterruptedException, TimeoutException {
+        System.out.print("Computing moment invariant vectors, stand by");
         ArrayList<double[]> vecs = new ArrayList<>();
         int frameID = 0;
+        int dotBoundary = N_FRAME / 5;
         Mat frame = new Mat();
         Mat gray = new Mat();
         boolean successful = cap.read(frame);
         while (successful) {
             Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
-            vecs.add(computeMomentInvarVec(gray, frameID));
+            vecs.add(computeMomentInvarVec(gray));
+            if (frameID >= dotBoundary) {
+                System.out.print(".");
+                dotBoundary += N_FRAME / 5;
+            }
             successful = cap.read(frame);
             frameID++;
         }
+        System.out.println("OK");
         return vecs;
     }
 
     //计算矩不变向量
-    private double[] computeMomentInvarVec(Mat gray, int frameID) throws InterruptedException, TimeOutException {
-        System.out.println("进入computeMomentInvarVec，当前帧：" + frameID);
-        long startTime = System.currentTimeMillis();
+    private double[] computeMomentInvarVec(Mat gray) throws InterruptedException, TimeoutException {
         double sum = computeMoment(gray, 0, 0);
         double[] massCenter = computeMassCenter(gray, sum);
         double xBar = massCenter[0];
@@ -214,7 +271,7 @@ public class Extractor implements AutoCloseable {
         executor.shutdown();
         boolean successful = executor.awaitTermination(600, TimeUnit.SECONDS);
         if (!successful)
-            throw new TimeOutException("Task \"Compute Moment Invariants\" didn't finish in time."); //太长时间没能计算完毕，抛出异常告知
+            throw new TimeoutException("Task \"Compute Moment Invariants\" didn't finish in time."); //太长时间没能计算完毕，抛出异常告知
 
         double n20 = invariants[4];
         double n02 = invariants[0];
@@ -227,14 +284,11 @@ public class Extractor implements AutoCloseable {
         double phi2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
         double phi3 = Math.pow(n30 - 3 * n12, 2) + Math.pow(3 * n21 - n03, 2);
         double[] vec = {phi1, phi2, phi3};
-        long endTime = System.currentTimeMillis();
-        long duration = endTime - startTime;
-        System.out.println("\tcomputeMomentInvarVec退出，耗时" + duration + "ms.");
         return vec;
     }
 
     //计算两灰度图的矩不变向量的欧拉距离
-    private double computeMomentInvarDist(double[] momentInvarVec_A, double[] momentInvarVec_B) throws InterruptedException, TimeOutException {
+    private double computeMomentInvarDist(double[] momentInvarVec_A, double[] momentInvarVec_B) throws InterruptedException, TimeoutException {
         double deltaX = momentInvarVec_A[0] - momentInvarVec_B[0];
         double deltaY = momentInvarVec_A[1] - momentInvarVec_B[1];
         double deltaZ = momentInvarVec_A[2] - momentInvarVec_B[2];
@@ -277,8 +331,8 @@ public class Extractor implements AutoCloseable {
     }
 }
 
-class TimeOutException extends Exception {
-    public TimeOutException(String msg) {
-        super(msg);
-    }
-}
+//class TimeOutException extends Exception {
+//    public TimeOutException(String msg) {
+//        super(msg);
+//    }
+//}
