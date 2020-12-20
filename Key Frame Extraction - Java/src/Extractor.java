@@ -1,5 +1,4 @@
 import java.io.*;
-import java.lang.reflect.WildcardType;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -8,9 +7,6 @@ import org.opencv.imgcodecs.*;
 import org.opencv.videoio.*;
 import org.opencv.imgproc.*;
 
-import javax.print.attribute.standard.RequestingUserName;
-
-//todo 直方图计算加速
 
 public class Extractor implements AutoCloseable {
     private String FILE_PATH;
@@ -24,7 +20,7 @@ public class Extractor implements AutoCloseable {
     private double HIST_B_WEIGHT = 1; //计算直方图相似度时，蓝色通道的权重
     private double HIST_G_WEIGHT = 1;
     private double HIST_R_WEIGHT = 1;
-    private double KEY_FRAME_KMEANS_THRESHOLD = 0.7; //通过k均值聚类进行关键帧提取的阈值，阈值越大，提取出的关键帧越多。推荐设为0.1
+    private double KEY_FRAME_KMEANS_THRESHOLD = 0.1; //通过k均值聚类进行关键帧提取的阈值，阈值越大，提取出的关键帧越多。推荐设为0.1
     private String KEY_FRAMES_FOLDER;
     private int N_FRAME;
 
@@ -38,21 +34,10 @@ public class Extractor implements AutoCloseable {
         ArrayList<double[]> momentInvarVecs = null;
         Mat frame = new Mat();
         boolean successful;
-        try (Extractor extractor = new Extractor("Video.mp4", "Extractor", "./Results/Key Frames/");) {
-            long startTime = System.currentTimeMillis();
+        try (Extractor extractor = new Extractor("Video - Complete.mp4", "Extractor", "./Results/Key Frames/");) {
             momentInvarVecs = extractor.computeMomentInvarVecs();
-            long endTime = System.currentTimeMillis();
-            System.out.println("Moment Invariant Vectors: " + (endTime - startTime) + "ms.");
-
-            startTime = endTime;
             boundaryFrameIDs = extractor.shotBoundaryDetection(momentInvarVecs);
-            endTime = System.currentTimeMillis();
-            System.out.println("Boundary Detection: " + (endTime - startTime) + "ms.");
-
-            startTime = endTime;
             extractor.keyFrameExtraction_KMeans(boundaryFrameIDs);
-            endTime = System.currentTimeMillis();
-            System.out.println("Key Frame Extraction: " + (endTime - startTime) + "ms.");
         }
         catch (Exception ex) {
             System.out.println("Error occured while extracting key frames. Error message:");
@@ -61,7 +46,6 @@ public class Extractor implements AutoCloseable {
             in.nextLine();
             return;
         }
-
     }
 
     //构造函数
@@ -98,6 +82,7 @@ public class Extractor implements AutoCloseable {
             }
         }
         return boundaryFrameIDs;
+
         /*ArrayList<Integer> boundaryFrameIDs = new ArrayList<>();
         boundaryFrameIDs.add(0);
         Mat frame = new Mat();
@@ -197,8 +182,8 @@ public class Extractor implements AutoCloseable {
     }
 
     //基于K均值聚类的关键帧提取
-    private void keyFrameExtraction_KMeans(ArrayList<Integer> boundaryIDs) {
-        System.out.print("Extracting key frames");
+    private void keyFrameExtraction_KMeans(ArrayList<Integer> boundaryIDs) throws InterruptedException, TimeoutException {
+        /*System.out.print("Extracting key frames");
         int nDotsPrinted = 0;
         int dotBoundary = N_FRAME / 5;
         for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
@@ -213,11 +198,35 @@ public class Extractor implements AutoCloseable {
         }
         if (nDotsPrinted < 5) System.out.print(".");
         inShotKeyFrameExtraction_KMeans(boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME);
-        System.out.println("OK");
+        System.out.println("OK");*/
+
+        /*long startTime = System.currentTimeMillis();*/
+
+        int[][][] hists = new int[N_FRAME][3][256];
+        ExecutorService executor = Executors.newCachedThreadPool();
+        for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
+            int left = boundaryIDs.get(i);
+            int right = boundaryIDs.get(i + 1);
+            executor.execute(new HistComputeTask(hists, left, right));
+        }
+        executor.execute(new HistComputeTask(hists, boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME));
+        executor.shutdown();
+        boolean successful = executor.awaitTermination(N_FRAME / FPS, TimeUnit.SECONDS);
+        if (!successful) throw new TimeoutException("Task \"Compute Histograms\" didn't finish in time.");
+
+        /*long endTime = System.currentTimeMillis();
+        System.out.println("\tHistogram: " + (endTime - startTime) + "ms.");*/
+
+        for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
+            int left = boundaryIDs.get(i);
+            int right = boundaryIDs.get(i + 1);
+            inShotKeyFrameExtraction_KMeans(hists, left, right);
+        }
+        inShotKeyFrameExtraction_KMeans(hists, boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME);
     }
 
     //镜头内关键帧提取，基于K均值聚类
-    private void inShotKeyFrameExtraction_KMeans(int left, int right) {
+    private void inShotKeyFrameExtraction_KMeans(int[][][] hists, int left, int right) {
         /*cap.set(CVConsts.CAP_PROP_POS_FRAMES, left);
         Mat frame = new Mat();
         cap.read(frame);
@@ -239,7 +248,7 @@ public class Extractor implements AutoCloseable {
         Imgproc.calcHist(frames, channels, mask, hists, histSize, ranges);
         System.out.println(hists.dump());*/
 
-        long startTime = System.currentTimeMillis();
+        /*long startTime = System.currentTimeMillis();
 
         cap.set(CVConsts.CAP_PROP_POS_FRAMES, left);
         Mat frame = new Mat();
@@ -260,46 +269,53 @@ public class Extractor implements AutoCloseable {
                 }
             }
 
-            /*HistComputeAction masterAction = new HistComputeAction(frame, hists[i], 0, WIDTH, 0, HEIGHT);
+            HistComputeAction masterAction = new HistComputeAction(frame, hists[i], 0, WIDTH, 0, HEIGHT);
             ForkJoinPool pool = new ForkJoinPool();
-            pool.invoke(masterAction);*/
+            pool.invoke(masterAction);
         }
 
         long endTime = System.currentTimeMillis();
         System.out.println("\tColor Histogram: " + (endTime - startTime) + "ms.");
-        startTime = endTime;
+        startTime = endTime;*/
 
+        /*long startTime, endTime;
+        startTime = System.currentTimeMillis();*/
+
+        Mat frame = new Mat();
+        int nFrames = right - left;
+        int frameID;
         //聚类分析
         ArrayList<HistClusterCenter> centers = new ArrayList<>();
         for (int i = 0; i <= nFrames - 1; i++) {
-            int[][] hist = hists[i];
+            frameID = i + left;
+            int[][] hist = hists[frameID];
             HistClusterCenter nearest = findNearestCenter(centers, hist);
             if (nearest == null) { //建立新中心
-                HistClusterCenter newCenter = new HistClusterCenter(new Histogram(i + left, hist));
+                HistClusterCenter newCenter = new HistClusterCenter(new Histogram(frameID, hist));
                 centers.add(newCenter);
             }
             else { //加入最近中心，调整中心位置
-                nearest.members.add(new Histogram(i + left, hist));
+                nearest.members.add(new Histogram(frameID, hist));
                 nearest.updateHist();
             }
         }
 
-        endTime = System.currentTimeMillis();
+        /*endTime = System.currentTimeMillis();
         System.out.println("\tClustering: " + (endTime - startTime) + "ms.");
-        startTime = endTime;
+        startTime = endTime;*/
 
         //进一步筛选关键帧并输出
         TreeSet<Integer> keyFrameIds = new TreeSet<>();
         for (HistClusterCenter center : centers) {
-            int frameID = center.findNearest();
+            frameID = center.findNearest();
             keyFrameIds.add(frameID);
-            cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
+            /*cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
             cap.read(frame);
             Mat gray = new Mat();
             Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
             if (!isDarkFrame(gray)) {
                 Imgcodecs.imwrite(KEY_FRAMES_FOLDER + frameID + ".jpg", frame);
-            }
+            }*/
         }
         boolean isDark = true;
         int firstKeyFrameID = 0;
@@ -318,19 +334,19 @@ public class Extractor implements AutoCloseable {
             else keyFrameIds.remove(firstKeyFrameID);
         }
         int lastKeyFrameID = firstKeyFrameID;
-        for (int frameID : keyFrameIds) {
-            if (frameID - lastKeyFrameID < FPS / 2) continue;
-            cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
+        for (int id : keyFrameIds) {
+            if (id - lastKeyFrameID < FPS / 2) continue;
+            cap.set(CVConsts.CAP_PROP_POS_FRAMES, id);
             cap.read(frame);
             Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
             if (!isDarkFrame(gray)) {
-                Imgcodecs.imwrite(KEY_FRAMES_FOLDER + frameID + ".jpg", frame);
-                lastKeyFrameID = frameID;
+                Imgcodecs.imwrite(KEY_FRAMES_FOLDER + id + ".jpg", frame);
+                lastKeyFrameID = id;
             }
         }
 
-        endTime = System.currentTimeMillis();
-        System.out.println("\tFiltering: " + (endTime - startTime) + "ms.\n");
+        /*endTime = System.currentTimeMillis();
+        System.out.println("\tFiltering: " + (endTime - startTime) + "ms.\n");*/
     }
 
     //计算颜色直方图相似度
@@ -608,9 +624,9 @@ public class Extractor implements AutoCloseable {
                         int B = (int) frame.get(y, x)[0];
                         int G = (int) frame.get(y, x)[1];
                         int R = (int) frame.get(y, x)[2];
-                        hists[i - start][0][B]++;
-                        hists[i - start][1][G]++;
-                        hists[i - start][2][R]++;
+                        hists[i][0][B]++;
+                        hists[i][1][G]++;
+                        hists[i][2][R]++;
                     }
                 }
             }
