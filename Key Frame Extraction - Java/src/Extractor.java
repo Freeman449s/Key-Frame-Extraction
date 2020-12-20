@@ -12,7 +12,6 @@ public class Extractor implements AutoCloseable {
     private String FILE_PATH;
     private int FPS;
     private VideoCapture cap;
-    private String WINDOW_NAME;
     private int WIDTH;
     private int HEIGHT;
     private double SHOT_BOUNDARY_THRESHOLD = 2E-7; //利用矩不变量法进行镜头边缘检测的阈值，推荐设为2E-7
@@ -29,15 +28,51 @@ public class Extractor implements AutoCloseable {
     }
 
     public static void main(String[] args) {
+        //提示输入文件路径
         Scanner in = new Scanner(System.in);
+        System.out.println("Input the path of video file.");
+        System.out.print("> ");
+        String filePath = in.nextLine();
+        File file = new File(filePath);
+        if (!file.exists() || !file.isFile()) { //文件不存在，返回
+            System.out.print("Warning: " + filePath + " is not a valid file path or file does not exist.");
+            in.nextLine();
+            return;
+        }
+        //提示输入关键帧输出路径
+        System.out.println("Input the directory path for writing key frames.");
+        System.out.println("Note: make sure the folder already exists. Path must end with a \"/\" character.");
+        System.out.println("You can choose to write key frames in the same folder as the program. In such case, just skip by pressing [Enter].");
+        System.out.print("> ");
+        String folderPath = in.nextLine();
+        if (!folderPath.equals("")) {
+            file = new File(folderPath);
+            if (!file.exists() || !file.isDirectory()) {
+                System.out.print("Warning: " + folderPath + " is not a valid directory path or directory does not exist.");
+                in.nextLine();
+                return;
+            }
+        }
+        //提示选择关键帧提取方法
+        boolean usingKMeans = false;
+        System.out.println("Use K-Means method? [Y/N]");
+        System.out.println("By using K-Means, the result would contain less irrelevant or duplicate frames, but " +
+                "time cost would sharply increase (by approximately 6 times).");
+        System.out.print("> ");
+        String choice = in.nextLine();
+        if (choice.charAt(0) == 'Y' || choice.charAt(0) == 'y') usingKMeans = true;
+        if (usingKMeans) System.out.println("Using K-Means.");
+        else System.out.println("Using moment invariants.");
+
         ArrayList<Integer> boundaryFrameIDs = null;
         ArrayList<double[]> momentInvarVecs = null;
         Mat frame = new Mat();
         boolean successful;
-        try (Extractor extractor = new Extractor("Video - Complete.mp4", "Extractor", "./Results/Key Frames/");) {
+        try (Extractor extractor = new Extractor(filePath, folderPath);) {
             momentInvarVecs = extractor.computeMomentInvarVecs();
             boundaryFrameIDs = extractor.shotBoundaryDetection(momentInvarVecs);
-            extractor.keyFrameExtraction_KMeans(boundaryFrameIDs);
+            if (usingKMeans) extractor.keyFrameExtraction_KMeans(boundaryFrameIDs);
+            else extractor.keyFrameExtraction_Invar(boundaryFrameIDs, momentInvarVecs);
         }
         catch (Exception ex) {
             System.out.println("Error occured while extracting key frames. Error message:");
@@ -46,15 +81,16 @@ public class Extractor implements AutoCloseable {
             in.nextLine();
             return;
         }
+        System.out.print("Press [Enter] to exit.");
+        in.nextLine();
     }
 
     //构造函数
     //keyFramesFolder末尾应有分隔符"/"或"\\"
-    public Extractor(String filePath, String windowName, String keyFramesFolder) {
+    public Extractor(String filePath, String keyFramesFolder) {
         FILE_PATH = filePath;
         cap = new VideoCapture(FILE_PATH);
         FPS = (int) cap.get(CVConsts.CAP_PROP_FPS);
-        WINDOW_NAME = windowName;
         WIDTH = (int) cap.get(CVConsts.CAP_PROP_FRAME_WIDTH);
         HEIGHT = (int) cap.get(CVConsts.CAP_PROP_FRAME_HEIGHT);
         KEY_FRAMES_FOLDER = keyFramesFolder;
@@ -67,6 +103,8 @@ public class Extractor implements AutoCloseable {
 
     //镜头边缘检测
     public ArrayList<Integer> shotBoundaryDetection(ArrayList<double[]> vecs) throws IOException, InterruptedException, TimeoutException {
+        System.out.print("Detecting shot boundaries..");
+
         ArrayList<Integer> boundaryFrameIDs = new ArrayList<>();
         boundaryFrameIDs.add(0);
         int lastBoundaryID = 0;
@@ -81,6 +119,9 @@ public class Extractor implements AutoCloseable {
                 lastBoundaryID = i;
             }
         }
+
+        System.out.println("...OK");
+
         return boundaryFrameIDs;
 
         /*ArrayList<Integer> boundaryFrameIDs = new ArrayList<>();
@@ -202,14 +243,16 @@ public class Extractor implements AutoCloseable {
 
         /*long startTime = System.currentTimeMillis();*/
 
+        System.out.print("Extracting key frames");
+
         int[][][] hists = new int[N_FRAME][3][256];
         ExecutorService executor = Executors.newCachedThreadPool();
         for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
             int left = boundaryIDs.get(i);
             int right = boundaryIDs.get(i + 1);
-            executor.execute(new HistComputeTask(hists, left, right));
+            executor.execute(new HistComputeTask(hists, left, right, false));
         }
-        executor.execute(new HistComputeTask(hists, boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME));
+        executor.execute(new HistComputeTask(hists, boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME, true));
         executor.shutdown();
         boolean successful = executor.awaitTermination(N_FRAME / FPS, TimeUnit.SECONDS);
         if (!successful) throw new TimeoutException("Task \"Compute Histograms\" didn't finish in time.");
@@ -223,6 +266,8 @@ public class Extractor implements AutoCloseable {
             inShotKeyFrameExtraction_KMeans(hists, left, right);
         }
         inShotKeyFrameExtraction_KMeans(hists, boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME);
+
+        System.out.println("OK");
     }
 
     //镜头内关键帧提取，基于K均值聚类
@@ -458,10 +503,14 @@ public class Extractor implements AutoCloseable {
         System.out.println("OK");
         return vecs;*/
 
+        System.out.print("Computing moment invariant vectors");
+        int dotBoundary = N_FRAME / 5;
+        int nDotsPrinted = 0;
         ArrayList<double[]> vecs = new ArrayList<>();
         Mat frame = new Mat();
         Mat gray = new Mat();
         boolean successful = cap.read(frame);
+        int frameID = 0;
         while (successful) {
             Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
             Moments moments = Imgproc.moments(gray);
@@ -469,8 +518,20 @@ public class Extractor implements AutoCloseable {
             Imgproc.HuMoments(moments, hu);
             double[] vec = {hu.get(0, 0)[0], hu.get(1, 0)[0], hu.get(2, 0)[0]};
             vecs.add(vec);
+
+            if (frameID > dotBoundary) {
+                System.out.print(".");
+                dotBoundary += N_FRAME / 5;
+                nDotsPrinted++;
+            }
+
             successful = cap.read(frame);
+            frameID++;
         }
+
+        if (nDotsPrinted < 5) System.out.print(".");
+        System.out.println("OK");
+
         return vecs;
     }
 
@@ -604,14 +665,20 @@ public class Extractor implements AutoCloseable {
         private int[][][] hists;
         private int start;
         private int end;
+        private boolean printDots;
 
-        private HistComputeTask(int[][][] hists, int start, int end) {
+        private HistComputeTask(int[][][] hists, int start, int end, boolean printDots) {
             this.hists = hists;
             this.start = start;
             this.end = end;
+            this.printDots = printDots;
         }
 
         public void run() {
+            int nFrames = end - start;
+            int dotBoundary = nFrames / 5;
+            int nDotsPrinted = 0;
+
             Mat frame = new Mat();
             for (int i = start; i <= end - 1; i++) {
                 synchronized (cap) {
@@ -629,7 +696,16 @@ public class Extractor implements AutoCloseable {
                         hists[i][2][R]++;
                     }
                 }
+
+                if (printDots && i - start >= dotBoundary) {
+                    System.out.print(".");
+                    dotBoundary += nFrames / 5;
+                    nDotsPrinted++;
+                }
+
             }
+
+            if (printDots && nDotsPrinted < 5) System.out.print(".");
         }
     }
 
