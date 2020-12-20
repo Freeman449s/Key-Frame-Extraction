@@ -1,0 +1,160 @@
+Moment Invariant Vectors: 701ms.
+Boundary Detection: 7ms.
+Extracting key frames	Color Histogram: 4410ms.
+	Clustering: 19ms.
+	Filtering: 61ms.
+
+	Color Histogram: 348ms.
+	Clustering: 1ms.
+	Filtering: 44ms.
+
+	Color Histogram: 372ms.
+	Clustering: 0ms.
+	Filtering: 44ms.
+
+	Color Histogram: 342ms.
+	Clustering: 0ms.
+	Filtering: 35ms.
+
+	Color Histogram: 342ms.
+	Clustering: 0ms.
+	Filtering: 40ms.
+
+	Color Histogram: 951ms.
+	Clustering: 0ms.
+	Filtering: 40ms.
+
+	Color Histogram: 1239ms.
+	Clustering: 0ms.
+	Filtering: 54ms.
+
+.	Color Histogram: 345ms.
+	Clustering: 0ms.
+	Filtering: 46ms.
+
+	Color Histogram: 343ms.
+	Clustering: 0ms.
+	Filtering: 33ms.
+
+	Color Histogram: 348ms.
+	Clustering: 0ms.
+	Filtering: 37ms.
+
+	Color Histogram: 706ms.
+	Clustering: 0ms.
+	Filtering: 45ms.
+
+	Color Histogram: 1261ms.
+	Clustering: 1ms.
+	Filtering: 36ms.
+
+	Color Histogram: 1113ms.
+	Clustering: 0ms.
+	Filtering: 42ms.
+
+	Color Histogram: 422ms.
+	Clustering: 0ms.
+	Filtering: 39ms.
+
+	Color Histogram: 338ms.
+	Clustering: 0ms.
+	Filtering: 39ms.
+
+	Color Histogram: 2239ms.
+	Clustering: 1ms.
+	Filtering: 53ms.
+
+	Color Histogram: 347ms.
+	Clustering: 1ms.
+	Filtering: 46ms.
+
+.	Color Histogram: 397ms.
+	Clustering: 0ms.
+	Filtering: 31ms.
+
+	Color Histogram: 338ms.
+	Clustering: 0ms.
+	Filtering: 36ms.
+
+	Color Histogram: 1121ms.
+	Clustering: 0ms.
+	Filtering: 72ms.
+
+	Color Histogram: 1065ms.
+	Clustering: 1ms.
+	Filtering: 47ms.
+
+	Color Histogram: 913ms.
+	Clustering: 0ms.
+	Filtering: 43ms.
+
+	Color Histogram: 348ms.
+	Clustering: 0ms.
+	Filtering: 38ms.
+
+	Color Histogram: 1318ms.
+	Clustering: 0ms.
+	Filtering: 51ms.
+
+	Color Histogram: 370ms.
+	Clustering: 0ms.
+	Filtering: 48ms.
+
+	Color Histogram: 1933ms.
+	Clustering: 0ms.
+	Filtering: 53ms.
+
+.	Color Histogram: 2877ms.
+	Clustering: 0ms.
+	Filtering: 75ms.
+
+	Color Histogram: 342ms.
+	Clustering: 0ms.
+	Filtering: 48ms.
+
+	Color Histogram: 350ms.
+	Clustering: 0ms.
+	Filtering: 41ms.
+
+	Color Histogram: 1834ms.
+	Clustering: 0ms.
+	Filtering: 46ms.
+
+	Color Histogram: 1033ms.
+	Clustering: 0ms.
+	Filtering: 45ms.
+
+	Color Histogram: 1035ms.
+	Clustering: 0ms.
+	Filtering: 41ms.
+
+	Color Histogram: 2162ms.
+	Clustering: 0ms.
+	Filtering: 47ms.
+
+.	Color Histogram: 653ms.
+	Clustering: 0ms.
+	Filtering: 56ms.
+
+	Color Histogram: 2801ms.
+	Clustering: 0ms.
+	Filtering: 46ms.
+
+	Color Histogram: 398ms.
+	Clustering: 0ms.
+	Filtering: 50ms.
+
+	Color Histogram: 352ms.
+	Clustering: 1ms.
+	Filtering: 39ms.
+
+	Color Histogram: 374ms.
+	Clustering: 0ms.
+	Filtering: 47ms.
+
+.	Color Histogram: 1346ms.
+	Clustering: 0ms.
+	Filtering: 54ms.
+
+OK
+Key Frame Extraction: 40642ms.

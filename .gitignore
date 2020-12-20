@@ -156,7 +156,7 @@ cython_debug/
 .mtj.tmp/
 
 # Package Files #
-*.jar
+# *.jar
 *.war
 *.nar
 *.ear
@@ -170,6 +170,8 @@ hs_err_pid*
 # ==================== IDEA and PyCharm ====================
 .idea
 *.iml
+out
+*.MF
 
 # ==================== Test Results ====================
 Key Frame Extraction - Java/Results/
