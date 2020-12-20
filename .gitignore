@@ -175,3 +175,6 @@ out
 
 # ==================== Test Results ====================
 Key Frame Extraction - Java/Results/
+
+# ==================== Media Files ====================
+*.mp4

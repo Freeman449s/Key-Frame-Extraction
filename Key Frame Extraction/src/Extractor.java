@@ -67,7 +67,6 @@ public class Extractor implements AutoCloseable {
         ArrayList<Integer> boundaryFrameIDs = null;
         ArrayList<double[]> momentInvarVecs = null;
         Mat frame = new Mat();
-        boolean successful;
         try (Extractor extractor = new Extractor(filePath, folderPath);) {
             momentInvarVecs = extractor.computeMomentInvarVecs();
             boundaryFrameIDs = extractor.shotBoundaryDetection(momentInvarVecs);
@@ -87,7 +86,7 @@ public class Extractor implements AutoCloseable {
 
     //构造函数
     //keyFramesFolder末尾应有分隔符"/"或"\\"
-    public Extractor(String filePath, String keyFramesFolder) {
+    public Extractor(String filePath, String keyFramesFolder) throws IOException {
         FILE_PATH = filePath;
         cap = new VideoCapture(FILE_PATH);
         FPS = (int) cap.get(CVConsts.CAP_PROP_FPS);
@@ -95,6 +94,9 @@ public class Extractor implements AutoCloseable {
         HEIGHT = (int) cap.get(CVConsts.CAP_PROP_FRAME_HEIGHT);
         KEY_FRAMES_FOLDER = keyFramesFolder;
         N_FRAME = (int) cap.get(CVConsts.CAP_PROP_FRAME_COUNT);
+        if (N_FRAME < 1) { //读取失败
+            throw new IOException("Cannot read video file.");
+        }
     }
 
     public void close() {
