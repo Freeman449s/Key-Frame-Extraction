@@ -7,6 +7,8 @@ import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.videoio.*;
 import org.opencv.imgproc.*;
 
+//todo 直方图计算加速
+
 public class Extractor implements AutoCloseable {
     private String FILE_PATH;
     private int FPS;
@@ -14,8 +16,12 @@ public class Extractor implements AutoCloseable {
     private String WINDOW_NAME;
     private int WIDTH;
     private int HEIGHT;
-    private static double SHOT_BOUNDARY_THRESHOLD = 2E-7; //利用矩不变量法进行镜头边缘检测的阈值，推荐设为2E-7
-    private static double KEY_FRAME_INVAR_THRESHOLD = 3E-6; //用于通过矩不变量法进行关键帧提取的阈值，推荐设为3E-6
+    private double SHOT_BOUNDARY_THRESHOLD = 2E-7; //利用矩不变量法进行镜头边缘检测的阈值，推荐设为2E-7
+    private double KEY_FRAME_INVAR_THRESHOLD = 3E-6; //用于通过矩不变量法进行关键帧提取的阈值，推荐设为3E-6
+    private double HIST_B_WEIGHT = 1; //计算直方图相似度时，蓝色通道的权重
+    private double HIST_G_WEIGHT = 1;
+    private double HIST_R_WEIGHT = 1;
+    private double KEY_FRAME_KMEANS_THRESHOLD = 0.1; //通过k均值聚类进行关键帧提取的阈值，阈值越大，提取出的关键帧越多。推荐设为0.1
     private String KEY_FRAMES_FOLDER;
     private int N_FRAME;
 
@@ -29,14 +35,26 @@ public class Extractor implements AutoCloseable {
         ArrayList<double[]> momentInvarVecs = null;
         Mat frame = new Mat();
         boolean successful;
-        try (Extractor extractor = new Extractor("Video - Complete.mp4", "Extractor", "./Results/Key Frames/");) {
+        try (Extractor extractor = new Extractor("Video.mp4", "Extractor", "./Results/Key Frames/");) {
+            /*long startTime = System.currentTimeMillis();*/
             momentInvarVecs = extractor.computeMomentInvarVecs();
+            /*long endTime = System.currentTimeMillis();
+            System.out.println("Moment Invariant Vectors: " + (endTime - startTime) + "ms.");*/
+
+            /*startTime = endTime;*/
             boundaryFrameIDs = extractor.shotBoundaryDetection(momentInvarVecs);
+            /*endTime = System.currentTimeMillis();
+            System.out.println("Boundary Detection: " + (endTime - startTime) + "ms.");*/
+
+            /*startTime = endTime;*/
             extractor.keyFrameExtraction_Invar(boundaryFrameIDs, momentInvarVecs);
+            /*endTime = System.currentTimeMillis();
+            System.out.println("Key Frame Extraction: " + (endTime - startTime) + "ms.");*/
         }
         catch (Exception ex) {
-            System.out.println("Error occured when trying to detect shot boundaries. Error message:");
+            System.out.println("Error occured while extracting key frames. Error message:");
             System.out.println(ex);
+            ex.printStackTrace();
             in.nextLine();
             return;
         }
@@ -120,14 +138,16 @@ public class Extractor implements AutoCloseable {
     //基于矩不变量提取关键帧
     public void keyFrameExtraction_Invar(ArrayList<Integer> boundaryIDs, ArrayList<double[]> vecs) throws InterruptedException, TimeoutException {
         System.out.print("Extracting key frames");
-        int dotBoundary = boundaryIDs.size() / 5;
+        int dotBoundary = N_FRAME / 5;
         int nDotsPrinted = 0;
         //各个镜头独立处理
         for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
-            inShotKeyFrameExtraction_Invar(vecs, boundaryIDs.get(i), boundaryIDs.get(i + 1));
-            if (i >= dotBoundary) {
+            int left = boundaryIDs.get(i);
+            int right = boundaryIDs.get(i + 1);
+            inShotKeyFrameExtraction_Invar(vecs, left, right);
+            if (right >= dotBoundary) {
                 System.out.print(".");
-                dotBoundary += boundaryIDs.size() / 5;
+                dotBoundary += N_FRAME / 5;
                 nDotsPrinted++;
             }
         }
@@ -173,7 +193,170 @@ public class Extractor implements AutoCloseable {
         }
     }
 
-    //todo: 自适应暗帧检测
+    //基于K均值聚类的关键帧提取
+    private void keyFrameExtraction_KMeans(ArrayList<Integer> boundaryIDs) {
+        System.out.print("Extracting key frames");
+        int nDotsPrinted = 0;
+        int dotBoundary = N_FRAME / 5;
+        for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
+            int left = boundaryIDs.get(i);
+            int right = boundaryIDs.get(i + 1);
+            inShotKeyFrameExtraction_KMeans(left, right);
+            if (right >= dotBoundary) {
+                System.out.print(".");
+                dotBoundary += N_FRAME / 5;
+                nDotsPrinted++;
+            }
+        }
+        if (nDotsPrinted < 5) System.out.print(".");
+        inShotKeyFrameExtraction_KMeans(boundaryIDs.get(boundaryIDs.size() - 1), N_FRAME);
+        System.out.println("OK");
+    }
+
+    //镜头内关键帧提取，基于K均值聚类
+    private void inShotKeyFrameExtraction_KMeans(int left, int right) {
+        /*cap.set(CVConsts.CAP_PROP_POS_FRAMES, left);
+        Mat frame = new Mat();
+        cap.read(frame);
+        ArrayList<Mat> frames = new ArrayList<>();
+        frames.add(frame);
+        MatOfInt channels = new MatOfInt(0, 1, 2);
+        Mat mask = new Mat();
+        Mat hists = new Mat();
+        MatOfInt histSize = new MatOfInt(256, 256, 256);
+        MatOfFloat ranges = new MatOfFloat(3, 2, CvType.CV_32F);
+        float[] rangeLeft = {0};
+        float[] rangeRight = {256};
+        ranges.put(0, 0, rangeLeft);
+        ranges.put(0, 1, rangeRight);
+        ranges.put(1, 0, rangeLeft);
+        ranges.put(1, 1, rangeRight);
+        ranges.put(2, 0, rangeLeft);
+        ranges.put(2, 1, rangeRight);
+        Imgproc.calcHist(frames, channels, mask, hists, histSize, ranges);
+        System.out.println(hists.dump());*/
+
+        /*long startTime = System.currentTimeMillis();*/
+
+        cap.set(CVConsts.CAP_PROP_POS_FRAMES, left);
+        Mat frame = new Mat();
+        int nFrames = right - left;
+        //计算颜色直方图
+        int[][][] hists = new int[nFrames][3][256]; //[帧][通道][像素值]
+        for (int i = 0; i <= nFrames - 1; i++) {
+            cap.read(frame);
+            for (int y = 0; y <= HEIGHT - 1; y++) {
+                for (int x = 0; x <= WIDTH - 1; x++) {
+                    int B = (int) frame.get(y, x)[0];
+                    int G = (int) frame.get(y, x)[1];
+                    int R = (int) frame.get(y, x)[2];
+                    hists[i][0][B]++;
+                    hists[i][1][G]++;
+                    hists[i][2][R]++;
+                }
+            }
+        }
+
+        /*long endTime = System.currentTimeMillis();
+        System.out.println("\tColor Histogram: " + (endTime - startTime) + "ms.");
+        startTime = endTime;*/
+
+        //聚类分析
+        ArrayList<HistClusterCenter> centers = new ArrayList<>();
+        for (int i = 0; i <= nFrames - 1; i++) {
+            int[][] hist = hists[i];
+            HistClusterCenter nearest = findNearestCenter(centers, hist);
+            if (nearest == null) { //建立新中心
+                HistClusterCenter newCenter = new HistClusterCenter(new Histogram(i + left, hist));
+                centers.add(newCenter);
+            }
+            else { //加入最近中心，调整中心位置
+                nearest.members.add(new Histogram(i + left, hist));
+                nearest.updateHist();
+            }
+        }
+
+        /*endTime = System.currentTimeMillis();
+        System.out.println("\tClustering: " + (endTime - startTime) + "ms.");
+        startTime = endTime;*/
+
+        //进一步筛选关键帧并输出
+        TreeSet<Integer> keyFrameIds = new TreeSet<>();
+        for (HistClusterCenter center : centers) {
+            int frameID = center.findNearest();
+            keyFrameIds.add(frameID);
+            /*cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
+            cap.read(frame);
+            Mat gray = new Mat();
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            if (!isDarkFrame(gray)) {
+                Imgcodecs.imwrite(KEY_FRAMES_FOLDER + frameID + ".jpg", frame);
+            }*/
+        }
+        boolean isDark = true;
+        int firstKeyFrameID = 0;
+        Mat gray = new Mat();
+        //提取第一个非暗中心帧
+        while (!keyFrameIds.isEmpty()) {
+            firstKeyFrameID = keyFrameIds.first();
+            cap.set(CVConsts.CAP_PROP_POS_FRAMES, firstKeyFrameID);
+            cap.read(frame);
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            isDark = isDarkFrame(gray);
+            if (!isDark) {
+                Imgcodecs.imwrite(KEY_FRAMES_FOLDER + firstKeyFrameID + ".jpg", frame);
+                break;
+            }
+            else keyFrameIds.remove(firstKeyFrameID);
+        }
+        int lastKeyFrameID = firstKeyFrameID;
+        for (int frameID : keyFrameIds) {
+            if (frameID - lastKeyFrameID < FPS / 2) continue;
+            cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
+            cap.read(frame);
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            if (!isDarkFrame(gray)) {
+                Imgcodecs.imwrite(KEY_FRAMES_FOLDER + frameID + ".jpg", frame);
+                lastKeyFrameID = frameID;
+            }
+        }
+
+        /*endTime = System.currentTimeMillis();
+        System.out.println("\tFiltering: " + (endTime - startTime) + "ms.\n");*/
+    }
+
+    //计算颜色直方图相似度
+    private double computeHistSim(int[][] histA, int[][] histB) {
+        double[] sims = new double[3]; //三个通道的相似度
+        int SUM = WIDTH * HEIGHT; //像素数
+        for (int i = 0; i <= 255; i++) {
+            sims[0] += Math.min(histA[0][i], histB[0][i]);
+            sims[1] += Math.min(histA[1][i], histB[1][i]);
+            sims[2] += Math.min(histA[2][i], histB[2][i]);
+        }
+        sims[0] /= SUM;
+        sims[1] /= SUM;
+        sims[2] /= SUM;
+        return (sims[0] * HIST_B_WEIGHT + sims[1] * HIST_G_WEIGHT + sims[2] * HIST_R_WEIGHT) / (HIST_B_WEIGHT + HIST_G_WEIGHT + HIST_R_WEIGHT);
+    }
+
+    //寻找最近的聚类中心，尚不存在聚类中心或与任何聚类中心距离都过远时返回null
+    private HistClusterCenter findNearestCenter(ArrayList<HistClusterCenter> centers, int[][] hist) {
+        if (centers.size() < 1) return null;
+        HistClusterCenter nearest = null;
+        double maxSim = -1;
+        for (int i = 0; i <= centers.size() - 1; i++) {
+            HistClusterCenter center = centers.get(i);
+            double sim = computeHistSim(center.hist, hist);
+            if (sim > maxSim && sim > KEY_FRAME_KMEANS_THRESHOLD) {
+                maxSim = sim;
+                nearest = centers.get(i);
+            }
+        }
+        return nearest;
+    }
+
+    //todo 自适应暗帧检测
     private boolean isDarkFrame(Mat gray) {
         long sum = 0;
         for (int y = 0; y <= HEIGHT - 1; y++) {
@@ -342,6 +525,58 @@ public class Extractor implements AutoCloseable {
             double normFactor = Math.pow(sum, 1 + (p + q) / 2); //归一化因子
             n /= normFactor;
             result[index] = n;
+        }
+    }
+
+    //“直方图聚类中心”内部类
+    //todo 修改访问权限
+    class HistClusterCenter {
+        int[][] hist;
+        ArrayList<Histogram> members;
+
+        HistClusterCenter(Histogram histObj) {
+            this.hist = new int[histObj.hist.length][histObj.hist[0].length];
+            for (int i = 0; i <= this.hist.length - 1; i++) {
+                System.arraycopy(histObj.hist[i], 0, this.hist[i], 0, this.hist[0].length);
+            }
+            members = new ArrayList<>();
+            members.add(histObj);
+        }
+
+        //更新中心的直方图，应在加入新成员后调用
+        void updateHist() {
+            int nMembers = members.size();
+            for (int channel = 0; channel <= 2; channel++) {
+                for (int v = 0; v <= 255; v++) {
+                    hist[channel][v] = (int) ((nMembers - 1.0) / nMembers * hist[channel][v] + 1.0 / nMembers * members.get(nMembers - 1).hist[channel][v]);
+                }
+            }
+        }
+
+        //寻找距离中心最近的帧，返回帧ID
+        int findNearest() {
+            Histogram nearest = members.get(0);
+            double maxSim = computeHistSim(hist, nearest.hist);
+            for (int i = 1; i <= members.size() - 1; i++) {
+                Histogram member = members.get(i);
+                double sim = computeHistSim(hist, member.hist);
+                if (sim > maxSim) {
+                    maxSim = sim;
+                    nearest = member;
+                }
+            }
+            return nearest.frameID;
+        }
+    }
+
+    //以帧ID和直方图作为成员的类，其实例用作HistClusterCenter.members的元素
+    class Histogram {
+        int frameID;
+        int[][] hist;
+
+        Histogram(int frameID, int[][] hist) {
+            this.frameID = frameID;
+            this.hist = hist;
         }
     }
 }
