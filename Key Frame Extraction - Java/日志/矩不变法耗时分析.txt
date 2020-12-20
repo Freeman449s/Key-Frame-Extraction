@@ -1,0 +1,4 @@
+Moment Invariant Vectors: 678ms.
+Boundary Detection: 6ms.
+Extracting key frames.....OK
+Key Frame Extraction: 4240ms.

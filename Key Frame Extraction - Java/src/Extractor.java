@@ -1,11 +1,14 @@
-import java.io.IOException;
+import java.io.*;
+import java.lang.reflect.WildcardType;
 import java.util.*;
 import java.util.concurrent.*;
 
 import org.opencv.core.*;
-import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgcodecs.*;
 import org.opencv.videoio.*;
 import org.opencv.imgproc.*;
+
+import javax.print.attribute.standard.RequestingUserName;
 
 //todo 直方图计算加速
 
@@ -21,7 +24,7 @@ public class Extractor implements AutoCloseable {
     private double HIST_B_WEIGHT = 1; //计算直方图相似度时，蓝色通道的权重
     private double HIST_G_WEIGHT = 1;
     private double HIST_R_WEIGHT = 1;
-    private double KEY_FRAME_KMEANS_THRESHOLD = 0.1; //通过k均值聚类进行关键帧提取的阈值，阈值越大，提取出的关键帧越多。推荐设为0.1
+    private double KEY_FRAME_KMEANS_THRESHOLD = 0.7; //通过k均值聚类进行关键帧提取的阈值，阈值越大，提取出的关键帧越多。推荐设为0.1
     private String KEY_FRAMES_FOLDER;
     private int N_FRAME;
 
@@ -36,20 +39,20 @@ public class Extractor implements AutoCloseable {
         Mat frame = new Mat();
         boolean successful;
         try (Extractor extractor = new Extractor("Video.mp4", "Extractor", "./Results/Key Frames/");) {
-            /*long startTime = System.currentTimeMillis();*/
+            long startTime = System.currentTimeMillis();
             momentInvarVecs = extractor.computeMomentInvarVecs();
-            /*long endTime = System.currentTimeMillis();
-            System.out.println("Moment Invariant Vectors: " + (endTime - startTime) + "ms.");*/
+            long endTime = System.currentTimeMillis();
+            System.out.println("Moment Invariant Vectors: " + (endTime - startTime) + "ms.");
 
-            /*startTime = endTime;*/
+            startTime = endTime;
             boundaryFrameIDs = extractor.shotBoundaryDetection(momentInvarVecs);
-            /*endTime = System.currentTimeMillis();
-            System.out.println("Boundary Detection: " + (endTime - startTime) + "ms.");*/
+            endTime = System.currentTimeMillis();
+            System.out.println("Boundary Detection: " + (endTime - startTime) + "ms.");
 
-            /*startTime = endTime;*/
-            extractor.keyFrameExtraction_Invar(boundaryFrameIDs, momentInvarVecs);
-            /*endTime = System.currentTimeMillis();
-            System.out.println("Key Frame Extraction: " + (endTime - startTime) + "ms.");*/
+            startTime = endTime;
+            extractor.keyFrameExtraction_KMeans(boundaryFrameIDs);
+            endTime = System.currentTimeMillis();
+            System.out.println("Key Frame Extraction: " + (endTime - startTime) + "ms.");
         }
         catch (Exception ex) {
             System.out.println("Error occured while extracting key frames. Error message:");
@@ -236,7 +239,7 @@ public class Extractor implements AutoCloseable {
         Imgproc.calcHist(frames, channels, mask, hists, histSize, ranges);
         System.out.println(hists.dump());*/
 
-        /*long startTime = System.currentTimeMillis();*/
+        long startTime = System.currentTimeMillis();
 
         cap.set(CVConsts.CAP_PROP_POS_FRAMES, left);
         Mat frame = new Mat();
@@ -245,6 +248,7 @@ public class Extractor implements AutoCloseable {
         int[][][] hists = new int[nFrames][3][256]; //[帧][通道][像素值]
         for (int i = 0; i <= nFrames - 1; i++) {
             cap.read(frame);
+
             for (int y = 0; y <= HEIGHT - 1; y++) {
                 for (int x = 0; x <= WIDTH - 1; x++) {
                     int B = (int) frame.get(y, x)[0];
@@ -255,11 +259,15 @@ public class Extractor implements AutoCloseable {
                     hists[i][2][R]++;
                 }
             }
+
+            /*HistComputeAction masterAction = new HistComputeAction(frame, hists[i], 0, WIDTH, 0, HEIGHT);
+            ForkJoinPool pool = new ForkJoinPool();
+            pool.invoke(masterAction);*/
         }
 
-        /*long endTime = System.currentTimeMillis();
+        long endTime = System.currentTimeMillis();
         System.out.println("\tColor Histogram: " + (endTime - startTime) + "ms.");
-        startTime = endTime;*/
+        startTime = endTime;
 
         //聚类分析
         ArrayList<HistClusterCenter> centers = new ArrayList<>();
@@ -276,22 +284,22 @@ public class Extractor implements AutoCloseable {
             }
         }
 
-        /*endTime = System.currentTimeMillis();
+        endTime = System.currentTimeMillis();
         System.out.println("\tClustering: " + (endTime - startTime) + "ms.");
-        startTime = endTime;*/
+        startTime = endTime;
 
         //进一步筛选关键帧并输出
         TreeSet<Integer> keyFrameIds = new TreeSet<>();
         for (HistClusterCenter center : centers) {
             int frameID = center.findNearest();
             keyFrameIds.add(frameID);
-            /*cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
+            cap.set(CVConsts.CAP_PROP_POS_FRAMES, frameID);
             cap.read(frame);
             Mat gray = new Mat();
             Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
             if (!isDarkFrame(gray)) {
                 Imgcodecs.imwrite(KEY_FRAMES_FOLDER + frameID + ".jpg", frame);
-            }*/
+            }
         }
         boolean isDark = true;
         int firstKeyFrameID = 0;
@@ -321,8 +329,8 @@ public class Extractor implements AutoCloseable {
             }
         }
 
-        /*endTime = System.currentTimeMillis();
-        System.out.println("\tFiltering: " + (endTime - startTime) + "ms.\n");*/
+        endTime = System.currentTimeMillis();
+        System.out.println("\tFiltering: " + (endTime - startTime) + "ms.\n");
     }
 
     //计算颜色直方图相似度
@@ -494,7 +502,7 @@ public class Extractor implements AutoCloseable {
     }
 
     //用于并行计算矩不变量的内部类
-    class MomentInvarComputeTask implements Runnable {
+    private class MomentInvarComputeTask implements Runnable {
         private Mat gray;
         private double xBar;
         private double yBar;
@@ -504,7 +512,7 @@ public class Extractor implements AutoCloseable {
         private double[] result;
         private int index;
 
-        MomentInvarComputeTask(Mat gray, double p, double q, double xBar, double yBar, double sum, double[] result, int index) {
+        private MomentInvarComputeTask(Mat gray, double p, double q, double xBar, double yBar, double sum, double[] result, int index) {
             this.gray = gray;
             this.xBar = xBar;
             this.yBar = yBar;
@@ -528,13 +536,93 @@ public class Extractor implements AutoCloseable {
         }
     }
 
-    //“直方图聚类中心”内部类
-    //todo 修改访问权限
-    class HistClusterCenter {
-        int[][] hist;
-        ArrayList<Histogram> members;
+    //用于并行计算直方图的内部类
+    /*private class HistComputeAction extends RecursiveAction {
+        private Mat frame;
+        private int[][] hist;
+        private int yStart;
+        private int yEnd;
+        private int xStart;
+        private int xEnd;
 
-        HistClusterCenter(Histogram histObj) {
+        private HistComputeAction(Mat frame, int[][] hist, int xStart, int xEnd, int yStart, int yEnd) {
+            this.frame = frame;
+            this.hist = hist;
+            this.xStart = xStart;
+            this.xEnd = xEnd;
+            this.yStart = yStart;
+            this.yEnd = yEnd;
+        }
+
+        public void compute() {
+            //任务规模较小，串行解决
+            if (xEnd - xStart <= 10 || yEnd - yStart <= 10) {
+                for (int x = xStart; x <= xEnd - 1; x++) {
+                    for (int y = yStart; y <= yEnd - 1; y++) {
+                        int B = (int) frame.get(y, x)[0];
+                        int G = (int) frame.get(y, x)[1];
+                        int R = (int) frame.get(y, x)[2];
+                        synchronized (hist) {
+                            hist[0][B]++;
+                            hist[1][G]++;
+                            hist[2][R]++;
+                        }
+                    }
+                }
+            }
+            //任务规模较大，拆分成四个子任务
+            else {
+                int xMid = (xStart + xEnd) / 2;
+                int yMid = (yStart + yEnd) / 2;
+                HistComputeAction leftUp = new HistComputeAction(frame, hist, xStart, xMid, yStart, yMid);
+                HistComputeAction rightUp = new HistComputeAction(frame, hist, xMid, xEnd, yStart, yMid);
+                HistComputeAction leftDown = new HistComputeAction(frame, hist, xStart, xMid, yMid, yEnd);
+                HistComputeAction rightDown = new HistComputeAction(frame, hist, xMid, xEnd, yMid, yEnd);
+                invokeAll(leftUp, leftDown, rightUp, rightDown);
+            }
+        }
+    }*/
+
+    //用于并行计算直方图的内部类
+    private class HistComputeTask implements Runnable {
+        private int[][][] hists;
+        private int start;
+        private int end;
+
+        private HistComputeTask(int[][][] hists, int start, int end) {
+            this.hists = hists;
+            this.start = start;
+            this.end = end;
+        }
+
+        public void run() {
+            Mat frame = new Mat();
+            for (int i = start; i <= end - 1; i++) {
+                synchronized (cap) {
+                    cap.set(CVConsts.CAP_PROP_POS_FRAMES, i);
+                    cap.read(frame);
+                }
+
+                for (int y = 0; y <= HEIGHT - 1; y++) {
+                    for (int x = 0; x <= WIDTH - 1; x++) {
+                        int B = (int) frame.get(y, x)[0];
+                        int G = (int) frame.get(y, x)[1];
+                        int R = (int) frame.get(y, x)[2];
+                        hists[i - start][0][B]++;
+                        hists[i - start][1][G]++;
+                        hists[i - start][2][R]++;
+                    }
+                }
+            }
+        }
+    }
+
+    //“直方图聚类中心”内部类
+    public class HistClusterCenter {
+        private int[][] hist;
+        private ArrayList<Histogram> members;
+
+        public HistClusterCenter(Histogram histObj) {
             this.hist = new int[histObj.hist.length][histObj.hist[0].length];
             for (int i = 0; i <= this.hist.length - 1; i++) {
                 System.arraycopy(histObj.hist[i], 0, this.hist[i], 0, this.hist[0].length);
@@ -544,7 +632,7 @@ public class Extractor implements AutoCloseable {
         }
 
         //更新中心的直方图，应在加入新成员后调用
-        void updateHist() {
+        public void updateHist() {
             int nMembers = members.size();
             for (int channel = 0; channel <= 2; channel++) {
                 for (int v = 0; v <= 255; v++) {
@@ -554,7 +642,7 @@ public class Extractor implements AutoCloseable {
         }
 
         //寻找距离中心最近的帧，返回帧ID
-        int findNearest() {
+        public int findNearest() {
             Histogram nearest = members.get(0);
             double maxSim = computeHistSim(hist, nearest.hist);
             for (int i = 1; i <= members.size() - 1; i++) {
@@ -569,12 +657,13 @@ public class Extractor implements AutoCloseable {
         }
     }
 
-    //以帧ID和直方图作为成员的类，其实例用作HistClusterCenter.members的元素
-    class Histogram {
-        int frameID;
-        int[][] hist;
+    //以帧ID和直方图作为成员的类
+    //其实例用作HistClusterCenter.members的元素，方便找出最接近中心的帧ID
+    public class Histogram {
+        private int frameID;
+        private int[][] hist;
 
-        Histogram(int frameID, int[][] hist) {
+        public Histogram(int frameID, int[][] hist) {
             this.frameID = frameID;
             this.hist = hist;
         }
