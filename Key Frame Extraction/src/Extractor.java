@@ -8,6 +8,7 @@ import org.opencv.videoio.*;
 import org.opencv.imgproc.*;
 
 //todo 添加提示信息：不要输入中文路径
+//todo 完善输出信息：保证打印5个点
 
 /**
  * “提取器”主类，提供方法提取指定视频文件的关键帧
