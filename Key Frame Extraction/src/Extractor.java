@@ -38,7 +38,7 @@ public class Extractor implements AutoCloseable {
     public static void main(String[] args) {
         //提示输入文件路径
         Scanner in = new Scanner(System.in);
-        System.out.println("Input the path of video file.");
+        System.out.println("Input path of the video file.");
         System.out.print("> ");
         String filePath = in.nextLine();
         File file = new File(filePath);
