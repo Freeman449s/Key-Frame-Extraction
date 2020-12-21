@@ -84,6 +84,112 @@ public class Extractor implements AutoCloseable {
         in.nextLine();
     }
 
+    //计算矩不变量
+    //参数
+    //sum: 灰度图中所有像素像素值的和
+    //xBar: 重心的横坐标
+    //yBar: 中心的纵坐标
+    private double computeMomentInvariant(Mat gray, double p, double q, double xBar, double yBar, double sum) {
+        double n = 0;
+        for (int y = 0; y <= HEIGHT - 1; y++) {
+            for (int x = 0; x <= WIDTH - 1; x++) {
+                n += Math.pow(x - xBar, p) * Math.pow(y - yBar, q) * gray.get(y, x)[0];
+            }
+        }
+        double normFactor = Math.pow(sum, 1 + (p + q) / 2); //归一化因子
+        n /= normFactor;
+        return n;
+    }
+
+    //计算每一帧的矩不变向量
+    private ArrayList<double[]> computeMomentInvarVecs() throws InterruptedException, TimeoutException {
+        /*System.out.print("Computing moment invariant vectors, stand by");
+        ArrayList<double[]> vecs = new ArrayList<>();
+        int frameID = 0;
+        int dotBoundary = N_FRAME / 5;
+        Mat frame = new Mat();
+        Mat gray = new Mat();
+        boolean successful = cap.read(frame);
+        while (successful) {
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            vecs.add(computeMomentInvarVec(gray));
+            if (frameID >= dotBoundary) {
+                System.out.print(".");
+                dotBoundary += N_FRAME / 5;
+            }
+            successful = cap.read(frame);
+            frameID++;
+        }
+        System.out.println("OK");
+        return vecs;*/
+
+        System.out.print("Computing moment invariant vectors");
+        int dotBoundary = N_FRAME / 5;
+        int nDotsPrinted = 0;
+        ArrayList<double[]> vecs = new ArrayList<>();
+        Mat frame = new Mat();
+        Mat gray = new Mat();
+        boolean successful = cap.read(frame);
+        int frameID = 0;
+        while (successful) {
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            Moments moments = Imgproc.moments(gray);
+            Mat hu = new Mat();
+            Imgproc.HuMoments(moments, hu);
+            double[] vec = {hu.get(0, 0)[0], hu.get(1, 0)[0], hu.get(2, 0)[0]};
+            vecs.add(vec);
+
+            if (frameID > dotBoundary) {
+                System.out.print(".");
+                dotBoundary += N_FRAME / 5;
+                nDotsPrinted++;
+            }
+
+            successful = cap.read(frame);
+            frameID++;
+        }
+
+        if (nDotsPrinted < 5) System.out.print(".");
+        System.out.println("OK");
+
+        return vecs;
+    }
+
+    //计算矩不变向量
+    private double[] computeMomentInvarVec(Mat gray) throws InterruptedException, TimeoutException {
+        double sum = computeMoment(gray, 0, 0);
+        double[] massCenter = computeMassCenter(gray, sum);
+        double xBar = massCenter[0];
+        double yBar = massCenter[1];
+        double[] invariants = new double[7];
+        //并行计算矩不变量
+        ExecutorService executor = Executors.newCachedThreadPool();
+        executor.execute(new MomentInvarComputeTask(gray, 0, 2, xBar, yBar, sum, invariants, 0));
+        executor.execute(new MomentInvarComputeTask(gray, 0, 3, xBar, yBar, sum, invariants, 1));
+        executor.execute(new MomentInvarComputeTask(gray, 1, 1, xBar, yBar, sum, invariants, 2));
+        executor.execute(new MomentInvarComputeTask(gray, 1, 2, xBar, yBar, sum, invariants, 3));
+        executor.execute(new MomentInvarComputeTask(gray, 2, 0, xBar, yBar, sum, invariants, 4));
+        executor.execute(new MomentInvarComputeTask(gray, 2, 1, xBar, yBar, sum, invariants, 5));
+        executor.execute(new MomentInvarComputeTask(gray, 3, 0, xBar, yBar, sum, invariants, 6));
+        executor.shutdown();
+        boolean successful = executor.awaitTermination(600, TimeUnit.SECONDS);
+        if (!successful)
+            throw new TimeoutException("Task \"Compute Moment Invariants\" didn't finish in time."); //太长时间没能计算完毕，抛出异常告知
+
+        double n20 = invariants[4];
+        double n02 = invariants[0];
+        double n11 = invariants[2];
+        double n30 = invariants[6];
+        double n12 = invariants[3];
+        double n21 = invariants[5];
+        double n03 = invariants[1];
+        double phi1 = n20 + n02;
+        double phi2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
+        double phi3 = Math.pow(n30 - 3 * n12, 2) + Math.pow(3 * n21 - n03, 2);
+        double[] vec = {phi1, phi2, phi3};
+        return vec;
+    }
+
     //构造函数
     //keyFramesFolder末尾应有分隔符"/"或"\\"
     public Extractor(String filePath, String keyFramesFolder) throws IOException {
@@ -466,111 +572,7 @@ public class Extractor implements AutoCloseable {
         return ret;
     }
 
-    //计算矩不变量
-    //参数
-    //sum: 灰度图中所有像素像素值的和
-    //xBar: 重心的横坐标
-    //yBar: 中心的纵坐标
-    private double computeMomentInvariant(Mat gray, double p, double q, double xBar, double yBar, double sum) {
-        double n = 0;
-        for (int y = 0; y <= HEIGHT - 1; y++) {
-            for (int x = 0; x <= WIDTH - 1; x++) {
-                n += Math.pow(x - xBar, p) * Math.pow(y - yBar, q) * gray.get(y, x)[0];
-            }
-        }
-        double normFactor = Math.pow(sum, 1 + (p + q) / 2); //归一化因子
-        n /= normFactor;
-        return n;
-    }
 
-    //计算每一帧的矩不变向量
-    private ArrayList<double[]> computeMomentInvarVecs() throws InterruptedException, TimeoutException {
-        /*System.out.print("Computing moment invariant vectors, stand by");
-        ArrayList<double[]> vecs = new ArrayList<>();
-        int frameID = 0;
-        int dotBoundary = N_FRAME / 5;
-        Mat frame = new Mat();
-        Mat gray = new Mat();
-        boolean successful = cap.read(frame);
-        while (successful) {
-            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
-            vecs.add(computeMomentInvarVec(gray));
-            if (frameID >= dotBoundary) {
-                System.out.print(".");
-                dotBoundary += N_FRAME / 5;
-            }
-            successful = cap.read(frame);
-            frameID++;
-        }
-        System.out.println("OK");
-        return vecs;*/
-
-        System.out.print("Computing moment invariant vectors");
-        int dotBoundary = N_FRAME / 5;
-        int nDotsPrinted = 0;
-        ArrayList<double[]> vecs = new ArrayList<>();
-        Mat frame = new Mat();
-        Mat gray = new Mat();
-        boolean successful = cap.read(frame);
-        int frameID = 0;
-        while (successful) {
-            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
-            Moments moments = Imgproc.moments(gray);
-            Mat hu = new Mat();
-            Imgproc.HuMoments(moments, hu);
-            double[] vec = {hu.get(0, 0)[0], hu.get(1, 0)[0], hu.get(2, 0)[0]};
-            vecs.add(vec);
-
-            if (frameID > dotBoundary) {
-                System.out.print(".");
-                dotBoundary += N_FRAME / 5;
-                nDotsPrinted++;
-            }
-
-            successful = cap.read(frame);
-            frameID++;
-        }
-
-        if (nDotsPrinted < 5) System.out.print(".");
-        System.out.println("OK");
-
-        return vecs;
-    }
-
-    //计算矩不变向量
-    private double[] computeMomentInvarVec(Mat gray) throws InterruptedException, TimeoutException {
-        double sum = computeMoment(gray, 0, 0);
-        double[] massCenter = computeMassCenter(gray, sum);
-        double xBar = massCenter[0];
-        double yBar = massCenter[1];
-        double[] invariants = new double[7];
-        //并行计算矩不变量
-        ExecutorService executor = Executors.newCachedThreadPool();
-        executor.execute(new MomentInvarComputeTask(gray, 0, 2, xBar, yBar, sum, invariants, 0));
-        executor.execute(new MomentInvarComputeTask(gray, 0, 3, xBar, yBar, sum, invariants, 1));
-        executor.execute(new MomentInvarComputeTask(gray, 1, 1, xBar, yBar, sum, invariants, 2));
-        executor.execute(new MomentInvarComputeTask(gray, 1, 2, xBar, yBar, sum, invariants, 3));
-        executor.execute(new MomentInvarComputeTask(gray, 2, 0, xBar, yBar, sum, invariants, 4));
-        executor.execute(new MomentInvarComputeTask(gray, 2, 1, xBar, yBar, sum, invariants, 5));
-        executor.execute(new MomentInvarComputeTask(gray, 3, 0, xBar, yBar, sum, invariants, 6));
-        executor.shutdown();
-        boolean successful = executor.awaitTermination(600, TimeUnit.SECONDS);
-        if (!successful)
-            throw new TimeoutException("Task \"Compute Moment Invariants\" didn't finish in time."); //太长时间没能计算完毕，抛出异常告知
-
-        double n20 = invariants[4];
-        double n02 = invariants[0];
-        double n11 = invariants[2];
-        double n30 = invariants[6];
-        double n12 = invariants[3];
-        double n21 = invariants[5];
-        double n03 = invariants[1];
-        double phi1 = n20 + n02;
-        double phi2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
-        double phi3 = Math.pow(n30 - 3 * n12, 2) + Math.pow(3 * n21 - n03, 2);
-        double[] vec = {phi1, phi2, phi3};
-        return vec;
-    }
 
     //计算两灰度图的矩不变向量的欧拉距离
     private double computeMomentInvarDist(double[] momentInvarVec_A, double[] momentInvarVec_B) throws InterruptedException, TimeoutException {
