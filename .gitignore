@@ -174,7 +174,7 @@ out
 *.MF
 
 # ==================== Test Results ====================
-Key Frame Extraction - Java/Results/
+Key Frame Extraction/Results/
 
 # ==================== Media Files ====================
 *.mp4
