@@ -1,4 +1,0 @@
-Moment Invariant Vectors: 627ms.
-Boundary Detection: 0ms.
-	Histogram: 25975ms.
-Key Frame Extraction: 27662ms.
