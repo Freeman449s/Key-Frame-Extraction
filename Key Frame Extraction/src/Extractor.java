@@ -36,6 +36,11 @@ public class Extractor implements AutoCloseable {
      * 主函数，提供程序入口和交互功能
      */
     public static void main(String[] args) {
+        System.out.println("Key Frame Extractor v1.0.0-beta");
+        System.out.println("(C)2020, Gordon Freeman");
+        System.out.println("Powered by OpenCV");
+        System.out.println();
+
         //提示选择语言
         Scanner in = new Scanner(System.in);
         System.out.println("Choose your language:");
