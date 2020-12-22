@@ -26,6 +26,8 @@ public class Extractor implements AutoCloseable {
     private int N_FRAME;
     private int N_EFFECTIVE_FRAME; //有效帧数：末尾几帧可能读取失败
 
+    private static boolean usingChinese = false;
+
     static {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
@@ -36,10 +38,10 @@ public class Extractor implements AutoCloseable {
     public static void main(String[] args) {
         //提示选择语言
         Scanner in = new Scanner(System.in);
-        boolean usingChinese = false;
         System.out.println("Choose your language:");
         System.out.println("1. English");
         System.out.println("2. 中文");
+        System.out.print("> ");
         String choice = in.nextLine();
         if (choice.charAt(0) == '1') usingChinese = false;
         else if (choice.charAt(0) == '2') usingChinese = true;
@@ -130,7 +132,7 @@ public class Extractor implements AutoCloseable {
             in.nextLine();
             return;
         }
-        if (usingChinese) System.out.println("按下[Enter]退出。");
+        if (usingChinese) System.out.print("按下[Enter]退出。");
         else System.out.print("Press [Enter] to exit.");
         in.nextLine();
     }
@@ -183,7 +185,8 @@ public class Extractor implements AutoCloseable {
         System.out.println("OK");
         return vecs;*/
 
-        System.out.print("Computing moment invariant vectors");
+        if (usingChinese) System.out.print("计算矩不变向量");
+        else System.out.print("Computing moment invariant vectors");
         int dotBoundary = N_FRAME / 5;
         int nDotsPrinted = 0;
         ArrayList<double[]> vecs = new ArrayList<>();
@@ -229,7 +232,8 @@ public class Extractor implements AutoCloseable {
      * @throws TimeoutException     过长时间未能完成计算
      */
     public ArrayList<Integer> shotBoundaryDetection(ArrayList<double[]> vecs) throws InterruptedException, TimeoutException {
-        System.out.print("Detecting shot boundaries..");
+        if (usingChinese) System.out.print("检测镜头边界");
+        else System.out.print("Detecting shot boundaries..");
 
         ArrayList<Integer> boundaryFrameIDs = new ArrayList<>();
         boundaryFrameIDs.add(0);
@@ -299,7 +303,8 @@ public class Extractor implements AutoCloseable {
      * @throws TimeoutException     过长时间未能完成计算
      */
     public void keyFrameExtraction_Invar(ArrayList<Integer> boundaryIDs, ArrayList<double[]> vecs) throws InterruptedException, TimeoutException {
-        System.out.print("Extracting key frames");
+        if (usingChinese) System.out.print("提取关键帧");
+        else System.out.print("Extracting key frames");
         int dotBoundary = N_EFFECTIVE_FRAME / 5;
         int nDotsPrinted = 0;
         //各个镜头独立处理
@@ -392,7 +397,8 @@ public class Extractor implements AutoCloseable {
 
         /*long startTime = System.currentTimeMillis();*/
 
-        System.out.print("Extracting key frames");
+        if (usingChinese) System.out.print("提取关键帧");
+        else System.out.print("Extracting key frames");
 
         int[][][] hists = new int[N_EFFECTIVE_FRAME][3][256];
         ExecutorService executor = Executors.newCachedThreadPool();
@@ -568,89 +574,6 @@ public class Extractor implements AutoCloseable {
     }
 
     /**
-     * 并行计算一幅灰度图的矩不变向量（因性能不佳被搁置）
-     *
-     * @param gray 灰度图
-     * @return 灰度图的矩不变向量
-     * @throws InterruptedException 线程被中断
-     * @throws TimeoutException     过长时间未能完成计算
-     */
-    private double[] computeMomentInvarVec(Mat gray) throws InterruptedException, TimeoutException {
-        double sum = computeMoment(gray, 0, 0);
-        double[] massCenter = computeMassCenter(gray, sum);
-        double xBar = massCenter[0];
-        double yBar = massCenter[1];
-        double[] invariants = new double[7];
-        //并行计算矩不变量
-        ExecutorService executor = Executors.newCachedThreadPool();
-        executor.execute(new MomentInvarComputeTask(gray, 0, 2, xBar, yBar, sum, invariants, 0));
-        executor.execute(new MomentInvarComputeTask(gray, 0, 3, xBar, yBar, sum, invariants, 1));
-        executor.execute(new MomentInvarComputeTask(gray, 1, 1, xBar, yBar, sum, invariants, 2));
-        executor.execute(new MomentInvarComputeTask(gray, 1, 2, xBar, yBar, sum, invariants, 3));
-        executor.execute(new MomentInvarComputeTask(gray, 2, 0, xBar, yBar, sum, invariants, 4));
-        executor.execute(new MomentInvarComputeTask(gray, 2, 1, xBar, yBar, sum, invariants, 5));
-        executor.execute(new MomentInvarComputeTask(gray, 3, 0, xBar, yBar, sum, invariants, 6));
-        executor.shutdown();
-        boolean successful = executor.awaitTermination(600, TimeUnit.SECONDS);
-        if (!successful)
-            throw new TimeoutException("Task \"Compute Moment Invariants\" didn't finish in time."); //太长时间没能计算完毕，抛出异常告知
-
-        double n20 = invariants[4];
-        double n02 = invariants[0];
-        double n11 = invariants[2];
-        double n30 = invariants[6];
-        double n12 = invariants[3];
-        double n21 = invariants[5];
-        double n03 = invariants[1];
-        double phi1 = n20 + n02;
-        double phi2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
-        double phi3 = Math.pow(n30 - 3 * n12, 2) + Math.pow(3 * n21 - n03, 2);
-        double[] vec = {phi1, phi2, phi3};
-        return vec;
-    }
-
-    /**
-     * 计算一幅灰度图的矩不变量（因性能不佳被搁置）
-     *
-     * @param gray 灰度图
-     * @param p    x的次数
-     * @param q    y的次数
-     * @param xBar 重心的横坐标
-     * @param yBar 重心的纵坐标
-     * @param sum  所有像素值之和
-     * @return 矩不变量
-     */
-    private double computeMomentInvariant(Mat gray, double p, double q, double xBar, double yBar, double sum) {
-        double n = 0;
-        for (int y = 0; y <= HEIGHT - 1; y++) {
-            for (int x = 0; x <= WIDTH - 1; x++) {
-                n += Math.pow(x - xBar, p) * Math.pow(y - yBar, q) * gray.get(y, x)[0];
-            }
-        }
-        double normFactor = Math.pow(sum, 1 + (p + q) / 2); //归一化因子
-        n /= normFactor;
-        return n;
-    }
-
-    /**
-     * 计算灰度图的图像矩（因性能不佳被搁置）
-     *
-     * @param gray 灰度图
-     * @param p    x的次数
-     * @param q    y的次数
-     * @return 图像矩
-     */
-    private double computeMoment(Mat gray, double p, double q) {
-        double m = 0;
-        for (int y = 0; y <= HEIGHT - 1; y++) { //Mat的行数等于图像的高度
-            for (int x = 0; x <= WIDTH - 1; x++) {
-                m += Math.pow(x, p) * Math.pow(y, q) * gray.get(y, x)[0];
-            }
-        }
-        return m;
-    }
-
-    /**
      * 计算两幅灰度图矩不变向量的欧拉距离
      *
      * @param momentInvarVec_A 灰度图A的矩不变向量
@@ -736,89 +659,86 @@ public class Extractor implements AutoCloseable {
     }
 
     /**
-     * 用于并行计算矩不变量的内部类（因性能不佳被搁置）
+     * 并行计算一幅灰度图的矩不变向量（因性能不佳被搁置）
+     *
+     * @param gray 灰度图
+     * @return 灰度图的矩不变向量
+     * @throws InterruptedException 线程被中断
+     * @throws TimeoutException     过长时间未能完成计算
      */
-    private class MomentInvarComputeTask implements Runnable {
-        private Mat gray;
-        private double xBar;
-        private double yBar;
-        private double sum;
-        private double p;
-        private double q;
-        private double[] result;
-        private int index; //在数组的哪个位置写入结果
+    private double[] computeMomentInvarVec(Mat gray) throws InterruptedException, TimeoutException {
+        double sum = computeMoment(gray, 0, 0);
+        double[] massCenter = computeMassCenter(gray, sum);
+        double xBar = massCenter[0];
+        double yBar = massCenter[1];
+        double[] invariants = new double[7];
+        //并行计算矩不变量
+        ExecutorService executor = Executors.newCachedThreadPool();
+        executor.execute(new MomentInvarComputeTask(gray, 0, 2, xBar, yBar, sum, invariants, 0));
+        executor.execute(new MomentInvarComputeTask(gray, 0, 3, xBar, yBar, sum, invariants, 1));
+        executor.execute(new MomentInvarComputeTask(gray, 1, 1, xBar, yBar, sum, invariants, 2));
+        executor.execute(new MomentInvarComputeTask(gray, 1, 2, xBar, yBar, sum, invariants, 3));
+        executor.execute(new MomentInvarComputeTask(gray, 2, 0, xBar, yBar, sum, invariants, 4));
+        executor.execute(new MomentInvarComputeTask(gray, 2, 1, xBar, yBar, sum, invariants, 5));
+        executor.execute(new MomentInvarComputeTask(gray, 3, 0, xBar, yBar, sum, invariants, 6));
+        executor.shutdown();
+        boolean successful = executor.awaitTermination(600, TimeUnit.SECONDS);
+        if (!successful)
+            throw new TimeoutException("Task \"Compute Moment Invariants\" didn't finish in time."); //太长时间没能计算完毕，抛出异常告知
 
-        private MomentInvarComputeTask(Mat gray, double p, double q, double xBar, double yBar, double sum, double[] result, int index) {
-            this.gray = gray;
-            this.xBar = xBar;
-            this.yBar = yBar;
-            this.sum = sum;
-            this.p = p;
-            this.q = q;
-            this.result = result;
-            this.index = index;
-        }
-
-        public void run() {
-            double n = 0;
-            for (int y = 0; y <= HEIGHT - 1; y++) {
-                for (int x = 0; x <= WIDTH - 1; x++) {
-                    n += Math.pow(x - xBar, p) * Math.pow(y - yBar, q) * gray.get(y, x)[0];
-                }
-            }
-            double normFactor = Math.pow(sum, 1 + (p + q) / 2); //归一化因子
-            n /= normFactor;
-            result[index] = n;
-        }
+        double n20 = invariants[4];
+        double n02 = invariants[0];
+        double n11 = invariants[2];
+        double n30 = invariants[6];
+        double n12 = invariants[3];
+        double n21 = invariants[5];
+        double n03 = invariants[1];
+        double phi1 = n20 + n02;
+        double phi2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
+        double phi3 = Math.pow(n30 - 3 * n12, 2) + Math.pow(3 * n21 - n03, 2);
+        double[] vec = {phi1, phi2, phi3};
+        return vec;
     }
 
     /**
-     * 用于并行计算颜色直方图的内部类（由于性能不佳被搁置）
+     * 计算一幅灰度图的矩不变量（因性能不佳被搁置）
+     *
+     * @param gray 灰度图
+     * @param p    x的次数
+     * @param q    y的次数
+     * @param xBar 重心的横坐标
+     * @param yBar 重心的纵坐标
+     * @param sum  所有像素值之和
+     * @return 矩不变量
      */
-    private class HistComputeAction extends RecursiveAction {
-        private Mat frame;
-        private int[][] hist;
-        private int yStart;
-        private int yEnd;
-        private int xStart;
-        private int xEnd;
-
-        private HistComputeAction(Mat frame, int[][] hist, int xStart, int xEnd, int yStart, int yEnd) {
-            this.frame = frame;
-            this.hist = hist;
-            this.xStart = xStart;
-            this.xEnd = xEnd;
-            this.yStart = yStart;
-            this.yEnd = yEnd;
-        }
-
-        public void compute() {
-            //任务规模较小，串行解决
-            if (xEnd - xStart <= 10 || yEnd - yStart <= 10) {
-                for (int x = xStart; x <= xEnd - 1; x++) {
-                    for (int y = yStart; y <= yEnd - 1; y++) {
-                        int B = (int) frame.get(y, x)[0];
-                        int G = (int) frame.get(y, x)[1];
-                        int R = (int) frame.get(y, x)[2];
-                        synchronized (hist) {
-                            hist[0][B]++;
-                            hist[1][G]++;
-                            hist[2][R]++;
-                        }
-                    }
-                }
-            }
-            //任务规模较大，拆分成四个子任务
-            else {
-                int xMid = (xStart + xEnd) / 2;
-                int yMid = (yStart + yEnd) / 2;
-                HistComputeAction leftUp = new HistComputeAction(frame, hist, xStart, xMid, yStart, yMid);
-                HistComputeAction rightUp = new HistComputeAction(frame, hist, xMid, xEnd, yStart, yMid);
-                HistComputeAction leftDown = new HistComputeAction(frame, hist, xStart, xMid, yMid, yEnd);
-                HistComputeAction rightDown = new HistComputeAction(frame, hist, xMid, xEnd, yMid, yEnd);
-                invokeAll(leftUp, leftDown, rightUp, rightDown);
+    private double computeMomentInvariant(Mat gray, double p, double q, double xBar, double yBar, double sum) {
+        double n = 0;
+        for (int y = 0; y <= HEIGHT - 1; y++) {
+            for (int x = 0; x <= WIDTH - 1; x++) {
+                n += Math.pow(x - xBar, p) * Math.pow(y - yBar, q) * gray.get(y, x)[0];
             }
         }
+        double normFactor = Math.pow(sum, 1 + (p + q) / 2); //归一化因子
+        n /= normFactor;
+        return n;
+    }
+
+    /**
+     * 计算灰度图的图像矩（因性能不佳被搁置）
+     *
+     * @param gray 灰度图
+     * @param p    x的次数
+     * @param q    y的次数
+     * @return 图像矩
+     */
+    private double computeMoment(Mat gray, double p, double q) {
+        double m = 0;
+        for (int y = 0; y <= HEIGHT - 1; y++) { //Mat的行数等于图像的高度
+            for (int x = 0; x <= WIDTH - 1; x++) {
+                m += Math.pow(x, p) * Math.pow(y, q) * gray.get(y, x)[0];
+            }
+        }
+        return m;
     }
 
     /**
@@ -929,6 +849,92 @@ public class Extractor implements AutoCloseable {
         public Histogram(int frameID, int[][] hist) {
             this.frameID = frameID;
             this.hist = hist;
+        }
+    }
+
+    /**
+     * 用于并行计算矩不变量的内部类（因性能不佳被搁置）
+     */
+    private class MomentInvarComputeTask implements Runnable {
+        private Mat gray;
+        private double xBar;
+        private double yBar;
+        private double sum;
+        private double p;
+        private double q;
+        private double[] result;
+        private int index; //在数组的哪个位置写入结果
+
+        private MomentInvarComputeTask(Mat gray, double p, double q, double xBar, double yBar, double sum, double[] result, int index) {
+            this.gray = gray;
+            this.xBar = xBar;
+            this.yBar = yBar;
+            this.sum = sum;
+            this.p = p;
+            this.q = q;
+            this.result = result;
+            this.index = index;
+        }
+
+        public void run() {
+            double n = 0;
+            for (int y = 0; y <= HEIGHT - 1; y++) {
+                for (int x = 0; x <= WIDTH - 1; x++) {
+                    n += Math.pow(x - xBar, p) * Math.pow(y - yBar, q) * gray.get(y, x)[0];
+                }
+            }
+            double normFactor = Math.pow(sum, 1 + (p + q) / 2); //归一化因子
+            n /= normFactor;
+            result[index] = n;
+        }
+    }
+
+    /**
+     * 用于并行计算颜色直方图的内部类（由于性能不佳被搁置）
+     */
+    private class HistComputeAction extends RecursiveAction {
+        private Mat frame;
+        private int[][] hist;
+        private int yStart;
+        private int yEnd;
+        private int xStart;
+        private int xEnd;
+
+        private HistComputeAction(Mat frame, int[][] hist, int xStart, int xEnd, int yStart, int yEnd) {
+            this.frame = frame;
+            this.hist = hist;
+            this.xStart = xStart;
+            this.xEnd = xEnd;
+            this.yStart = yStart;
+            this.yEnd = yEnd;
+        }
+
+        public void compute() {
+            //任务规模较小，串行解决
+            if (xEnd - xStart <= 10 || yEnd - yStart <= 10) {
+                for (int x = xStart; x <= xEnd - 1; x++) {
+                    for (int y = yStart; y <= yEnd - 1; y++) {
+                        int B = (int) frame.get(y, x)[0];
+                        int G = (int) frame.get(y, x)[1];
+                        int R = (int) frame.get(y, x)[2];
+                        synchronized (hist) {
+                            hist[0][B]++;
+                            hist[1][G]++;
+                            hist[2][R]++;
+                        }
+                    }
+                }
+            }
+            //任务规模较大，拆分成四个子任务
+            else {
+                int xMid = (xStart + xEnd) / 2;
+                int yMid = (yStart + yEnd) / 2;
+                HistComputeAction leftUp = new HistComputeAction(frame, hist, xStart, xMid, yStart, yMid);
+                HistComputeAction rightUp = new HistComputeAction(frame, hist, xMid, xEnd, yStart, yMid);
+                HistComputeAction leftDown = new HistComputeAction(frame, hist, xStart, xMid, yMid, yEnd);
+                HistComputeAction rightDown = new HistComputeAction(frame, hist, xMid, xEnd, yMid, yEnd);
+                invokeAll(leftUp, leftDown, rightUp, rightDown);
+            }
         }
     }
 }
