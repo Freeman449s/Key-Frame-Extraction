@@ -88,7 +88,7 @@ public class Extractor implements AutoCloseable {
             file = new File(folderPath);
             if (!file.exists() || !file.isDirectory()) {
                 if (usingChinese)
-                    System.out.println("警告：\"" + filePath + "\" 不是符合规则的路径，或者目录不存在。");
+                    System.out.println("警告：\"" + folderPath + "\" 不是符合规则的路径，或者目录不存在。");
                 else
                     System.out.print("Warning: \"" + folderPath + "\" is not a valid directory path or directory does not exist.");
                 in.nextLine();
