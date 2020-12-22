@@ -7,6 +7,8 @@
 
 Video key frame extraction based on moment invariants and K-means clustering algorithm. Can be used to roughly understand the content of the video without watching it completely. Users are free to choose the algorithm to use. Different algorithms have different performance and results. Support both Chinese and English.
 
+<br/>
+
 ### 如何使用发行版 How to Run Release Version
 1. 安装JRE并配置环境变量。
 2. 解压下载的压缩包，确保.jar文件和.dll位于同一目录下。
