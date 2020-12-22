@@ -185,23 +185,26 @@ public class Extractor implements AutoCloseable {
         System.out.println("OK");
         return vecs;*/
 
+        int dotBoundary = N_FRAME / 5; //用于模拟进度条
+        int nDotsPrinted = 0;
+
         if (usingChinese) System.out.print("计算矩不变向量");
         else System.out.print("Computing moment invariant vectors");
-        int dotBoundary = N_FRAME / 5;
-        int nDotsPrinted = 0;
+        //计算矩不变向量
         ArrayList<double[]> vecs = new ArrayList<>();
         Mat frame = new Mat();
         Mat gray = new Mat();
         boolean successful = cap.read(frame);
         int frameID = 0;
         while (successful) {
-            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
+            Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY); //利用灰度图计算
             Moments moments = Imgproc.moments(gray);
             Mat hu = new Mat();
             Imgproc.HuMoments(moments, hu);
             double[] vec = {hu.get(0, 0)[0], hu.get(1, 0)[0], hu.get(2, 0)[0]};
             vecs.add(vec);
 
+            //更新进度条
             if (frameID > dotBoundary) {
                 System.out.print(".");
                 dotBoundary += N_FRAME / 5;
@@ -212,7 +215,7 @@ public class Extractor implements AutoCloseable {
             frameID++;
         }
 
-        N_EFFECTIVE_FRAME = vecs.size();
+        N_EFFECTIVE_FRAME = vecs.size(); //末尾几帧可能读取失败，更新有效帧数
 
         while (nDotsPrinted < 5) {
             System.out.print(".");
@@ -236,7 +239,7 @@ public class Extractor implements AutoCloseable {
         else System.out.print("Detecting shot boundaries..");
 
         ArrayList<Integer> boundaryFrameIDs = new ArrayList<>();
-        boundaryFrameIDs.add(0);
+        boundaryFrameIDs.add(0); //第一帧直接作为边界
         int lastBoundaryID = 0;
         double[] vecOfLast = null;
         double[] vecOfThis = null;
@@ -244,6 +247,7 @@ public class Extractor implements AutoCloseable {
             vecOfLast = vecs.get(i - 1);
             vecOfThis = vecs.get(i);
             double momentInvarDist = computeMomentInvarDist(vecOfLast, vecOfThis);
+            //当前帧与前一帧矩不变向量的距离大于阈值，且相隔超过半秒时，加入边界列表
             if (momentInvarDist > SHOT_BOUNDARY_THRESHOLD && i - lastBoundaryID > FPS / 2) {
                 boundaryFrameIDs.add(i);
                 lastBoundaryID = i;
@@ -303,25 +307,29 @@ public class Extractor implements AutoCloseable {
      * @throws TimeoutException     过长时间未能完成计算
      */
     public void keyFrameExtraction_Invar(ArrayList<Integer> boundaryIDs, ArrayList<double[]> vecs) throws InterruptedException, TimeoutException {
-        if (usingChinese) System.out.print("提取关键帧");
-        else System.out.print("Extracting key frames");
         int dotBoundary = N_EFFECTIVE_FRAME / 5;
         int nDotsPrinted = 0;
+
+        if (usingChinese) System.out.print("提取关键帧");
+        else System.out.print("Extracting key frames");
         //各个镜头独立处理
         for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
             int left = boundaryIDs.get(i);
             int right = boundaryIDs.get(i + 1);
             inShotKeyFrameExtraction_Invar(vecs, left, right);
+
             if (right >= dotBoundary) {
                 System.out.print(".");
                 dotBoundary += N_EFFECTIVE_FRAME / 5;
                 nDotsPrinted++;
             }
         }
+
         while (nDotsPrinted < 5) {
             System.out.print(".");
             nDotsPrinted++;
         }
+
         //单独处理最后一个镜头
         inShotKeyFrameExtraction_Invar(vecs, boundaryIDs.get(boundaryIDs.size() - 1), N_EFFECTIVE_FRAME);
         System.out.println("OK");
@@ -350,16 +358,18 @@ public class Extractor implements AutoCloseable {
             successful = cap.read(frame);
         }
         if (lastKeyFrameID >= right) return; //当前镜头内无法读取任何一帧
+        //如果第一帧不是暗帧则输出
         if (!isDarkFrame(frame)) Imgcodecs.imwrite(KEY_FRAMES_FOLDER + lastKeyFrameID + ".jpg", frame);
         double[] vecOfLastKeyFrame = vecs.get(lastKeyFrameID);
         //遍历镜头中的各帧
         for (int i = lastKeyFrameID + 1; i <= right - 1; i++) {
             double[] vecOfThis = vecs.get(i);
             double dist = computeMomentInvarDist(vecOfLastKeyFrame, vecOfThis);
+            //与上一关键帧距离超过阈值，且相隔半秒以上时作为关键帧输出
             if (dist > KEY_FRAME_INVAR_THRESHOLD && i - lastKeyFrameID > FPS / 2) {
                 cap.set(CVConsts.CAP_PROP_POS_FRAMES, i);
                 successful = cap.read(frame);
-                if (!successful) continue;
+                if (!successful) continue; //读取失败，舍弃此帧
                 Imgproc.cvtColor(frame, gray, Imgproc.COLOR_BGR2GRAY);
                 if (!isDarkFrame(gray)) {
                     Imgcodecs.imwrite(KEY_FRAMES_FOLDER + i + ".jpg", frame);
@@ -400,7 +410,8 @@ public class Extractor implements AutoCloseable {
         if (usingChinese) System.out.print("提取关键帧");
         else System.out.print("Extracting key frames");
 
-        int[][][] hists = new int[N_EFFECTIVE_FRAME][3][256];
+        //分镜头并行计算颜色直方图
+        int[][][] hists = new int[N_EFFECTIVE_FRAME][3][256]; //[帧号][通道][像素值]
         ExecutorService executor = Executors.newCachedThreadPool();
         for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
             int left = boundaryIDs.get(i);
@@ -415,6 +426,7 @@ public class Extractor implements AutoCloseable {
         /*long endTime = System.currentTimeMillis();
         System.out.println("\tHistogram: " + (endTime - startTime) + "ms.");*/
 
+        //分镜头提取关键帧
         for (int i = 0; i <= boundaryIDs.size() - 2; i++) {
             int left = boundaryIDs.get(i);
             int right = boundaryIDs.get(i + 1);
@@ -512,6 +524,7 @@ public class Extractor implements AutoCloseable {
 
         //进一步筛选关键帧并输出
         TreeSet<Integer> keyFrameIds = new TreeSet<>();
+        //将各个聚类最靠近中心的帧加入关键帧列表
         for (HistClusterCenter center : centers) {
             frameID = center.findNearest();
             keyFrameIds.add(frameID);
@@ -526,7 +539,7 @@ public class Extractor implements AutoCloseable {
         boolean isDark = true;
         int firstKeyFrameID = 0;
         Mat gray = new Mat();
-        //提取第一个非暗中心帧
+        //提取第一个非暗关键帧
         while (!keyFrameIds.isEmpty()) {
             firstKeyFrameID = keyFrameIds.first();
             cap.set(CVConsts.CAP_PROP_POS_FRAMES, firstKeyFrameID);
@@ -540,6 +553,7 @@ public class Extractor implements AutoCloseable {
             else keyFrameIds.remove(firstKeyFrameID);
         }
         int lastKeyFrameID = firstKeyFrameID;
+        //对列表中各帧依据亮度和位置进行筛选
         for (int id : keyFrameIds) {
             if (id - lastKeyFrameID < FPS / 2) continue;
             cap.set(CVConsts.CAP_PROP_POS_FRAMES, id);
@@ -686,6 +700,7 @@ public class Extractor implements AutoCloseable {
         if (!successful)
             throw new TimeoutException("Task \"Compute Moment Invariants\" didn't finish in time."); //太长时间没能计算完毕，抛出异常告知
 
+        //计算矩不变向量
         double n20 = invariants[4];
         double n02 = invariants[0];
         double n11 = invariants[2];
@@ -745,10 +760,10 @@ public class Extractor implements AutoCloseable {
      * 用于并行计算颜色直方图的内部类
      */
     private class HistComputeTask implements Runnable {
-        private int[][][] hists;
-        private int start;
-        private int end;
-        private boolean printDots;
+        private int[][][] hists; //用于存放结果的直方图数组
+        private int start; //任务的左边界（含），用于指示任务范围
+        private int end; //任务的右边界（不含）
+        private boolean printDots; //是否要模拟进度条
 
         private HistComputeTask(int[][][] hists, int start, int end, boolean printDots) {
             this.hists = hists;
@@ -801,7 +816,7 @@ public class Extractor implements AutoCloseable {
      * “直方图聚类中心”内部类
      */
     public class HistClusterCenter {
-        private int[][] hist;
+        private int[][] hist; //中心的直方图
         private ArrayList<Histogram> members;
 
         public HistClusterCenter(Histogram histObj) {
@@ -859,10 +874,10 @@ public class Extractor implements AutoCloseable {
         private Mat gray;
         private double xBar;
         private double yBar;
-        private double sum;
+        private double sum; //灰度图像素值之和
         private double p;
         private double q;
-        private double[] result;
+        private double[] result; //存放结果的数组
         private int index; //在数组的哪个位置写入结果
 
         private MomentInvarComputeTask(Mat gray, double p, double q, double xBar, double yBar, double sum, double[] result, int index) {
@@ -894,8 +909,8 @@ public class Extractor implements AutoCloseable {
      */
     private class HistComputeAction extends RecursiveAction {
         private Mat frame;
-        private int[][] hist;
-        private int yStart;
+        private int[][] hist; //用于存放计算结果的数组
+        private int yStart; //纵坐标的左边界，用于指示任务范围
         private int yEnd;
         private int xStart;
         private int xEnd;
