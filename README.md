@@ -1,39 +1,19 @@
 # 关键帧提取
 
-#### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+### 介绍 Introduction
+基于矩不变量和K-均值聚类算法的视频关键帧提取，可用于在无需观看完整视频的情况下大致了解视频的内容。用户可自由选择使用何种算法，不同的算法具有一定的性能和结果差异。支持中英双语。
 
-#### 软件架构
-软件架构说明
+<br/>
 
+Video key frame extraction based on moment invariants and K-means clustering algorithm. Can be used to roughly understand the content of the video without watching it completely. Users are free to choose the algorithm to use. Different algorithms have different performance and results. Support both Chinese and English.
 
-#### 安装教程
+### 如何使用发行版 How to Run Release Version
+1. 安装JRE并配置环境变量。
+2. 解压下载的压缩包，确保.jar文件和.dll位于同一目录下。
+3. 使用命令行定位到解压目录并运行。运行命令通常为java -jar XXX.jar的形式。
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+<br/>
 
-#### 使用说明
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 参与贡献
-
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
-
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+1. Install JRE and configure environment variables.
+2. Extract the downloaded package and make sure that the .jar file and .dll are in the same directory.
+3. Use the command line to navigate to the unzipped directory and run it. The running command is usually in the form of "java-jar XXX.jar".
