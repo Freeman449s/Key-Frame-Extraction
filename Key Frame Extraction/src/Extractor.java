@@ -7,9 +7,6 @@ import org.opencv.imgcodecs.*;
 import org.opencv.videoio.*;
 import org.opencv.imgproc.*;
 
-//todo 添加提示信息：不要输入中文路径
-//todo 完善输出信息：保证打印5个点
-
 /**
  * “提取器”主类，提供方法提取指定视频文件的关键帧
  */
@@ -37,41 +34,82 @@ public class Extractor implements AutoCloseable {
      * 主函数，提供程序入口和交互功能
      */
     public static void main(String[] args) {
-        //提示输入文件路径
+        //提示选择语言
         Scanner in = new Scanner(System.in);
-        System.out.println("Input path of the video file.");
+        boolean usingChinese = false;
+        System.out.println("Choose your language:");
+        System.out.println("1. English");
+        System.out.println("2. 中文");
+        String choice = in.nextLine();
+        if (choice.charAt(0) == '1') usingChinese = false;
+        else if (choice.charAt(0) == '2') usingChinese = true;
+        else System.out.println("\"" + choice + "\" is not a valid input. Program would use English.");
+        //提示输入文件路径
+        if (usingChinese) {
+            System.out.println("请输入视频文件的路径。");
+            System.out.println("注意：路径中请不要包含中文字符，否则可能造成异常。");
+        }
+        else {
+            System.out.println("Input path of the video file.");
+            System.out.println("Note: the path should not contain any Chinese characters, otherwise it may cause an error.");
+        }
         System.out.print("> ");
         String filePath = in.nextLine();
         File file = new File(filePath);
         if (!file.exists() || !file.isFile()) { //文件不存在，返回
-            System.out.print("Warning: " + filePath + " is not a valid file path or file does not exist.");
+            if (usingChinese)
+                System.out.println("警告：\"" + filePath + "\" 不是符合规则的路径，或者文件不存在。");
+            else
+                System.out.print("Warning: \"" + filePath + "\" is not a valid file path or file does not exist.");
             in.nextLine();
             return;
         }
         //提示输入关键帧输出路径
-        System.out.println("Input the directory path for writing key frames.");
-        System.out.println("Note: make sure the folder already exists. Path must end with a \"/\" character.");
-        System.out.println("You can choose to write key frames in the same folder as the program. In such case, just skip by pressing [Enter].");
+        if (usingChinese) {
+            System.out.println("请输入用于生成关键帧的目录的路径。");
+            System.out.println("注意：请输入已经存在的目录的路径，路径应以\"/\"结尾。");
+            System.out.println("     你可以按下[Enter]来跳过此步骤，关键帧正将被生成在与程序相同的目录下。");
+        }
+        else {
+            System.out.println("Input the directory path for writing key frames.");
+            System.out.println("Note: make sure the folder already exists. Path must end with a \"/\" character.");
+            System.out.println("      You can choose to write key frames in the same folder as the program. In such case, just skip by pressing [Enter].");
+        }
         System.out.print("> ");
         String folderPath = in.nextLine();
         if (!folderPath.equals("")) {
             file = new File(folderPath);
             if (!file.exists() || !file.isDirectory()) {
-                System.out.print("Warning: " + folderPath + " is not a valid directory path or directory does not exist.");
+                if (usingChinese)
+                    System.out.println("警告：\"" + filePath + "\" 不是符合规则的路径，或者目录不存在。");
+                else
+                    System.out.print("Warning: \"" + folderPath + "\" is not a valid directory path or directory does not exist.");
                 in.nextLine();
                 return;
             }
         }
         //提示选择关键帧提取方法
         boolean usingKMeans = false;
-        System.out.println("Use K-Means method? [Y/N]");
-        System.out.println("By using K-Means, the result would contain less irrelevant or duplicate frames, but " +
-                "time cost would sharply increase (by approximately 6 times).");
+        if (usingChinese) {
+            System.out.println("要使用K-均值聚类法吗？ [Y/N]");
+            System.out.println("使用K-均值聚类法，结果将含有更少的非关键帧或重复帧，但耗时可能急剧上升（大约6倍）。");
+        }
+        else {
+            System.out.println("Use K-Means method? [Y/N]");
+            System.out.println("By using K-Means, the result would contain less irrelevant or duplicate frames, but " +
+                    "time cost would sharply increase (by approximately 6 times).");
+        }
         System.out.print("> ");
-        String choice = in.nextLine();
+        choice = in.nextLine();
         if (choice.charAt(0) == 'Y' || choice.charAt(0) == 'y') usingKMeans = true;
-        if (usingKMeans) System.out.println("Using K-Means.");
-        else System.out.println("Using moment invariants.");
+        if (usingChinese) {
+            if (usingKMeans) System.out.println("使用K-均值聚类");
+            else System.out.println("使用矩不变量");
+        }
+        else {
+            if (usingKMeans) System.out.println("Using K-Means.");
+            else System.out.println("Using moment invariants.");
+        }
 
         ArrayList<Integer> boundaryFrameIDs = null;
         ArrayList<double[]> momentInvarVecs = null;
@@ -83,13 +121,17 @@ public class Extractor implements AutoCloseable {
             else extractor.keyFrameExtraction_Invar(boundaryFrameIDs, momentInvarVecs);
         }
         catch (Exception ex) {
-            System.out.println("Error occured while extracting key frames. Error message:");
+            if (usingChinese)
+                System.out.println("提取关键帧过程中发生异常，异常信息：");
+            else
+                System.out.println("Error occured while extracting key frames. Error message:");
             System.out.println(ex);
             ex.printStackTrace();
             in.nextLine();
             return;
         }
-        System.out.print("Press [Enter] to exit.");
+        if (usingChinese) System.out.println("按下[Enter]退出。");
+        else System.out.print("Press [Enter] to exit.");
         in.nextLine();
     }
 
@@ -169,7 +211,10 @@ public class Extractor implements AutoCloseable {
 
         N_EFFECTIVE_FRAME = vecs.size();
 
-        if (nDotsPrinted < 5) System.out.print(".");
+        while (nDotsPrinted < 5) {
+            System.out.print(".");
+            nDotsPrinted++;
+        }
         System.out.println("OK");
 
         return vecs;
@@ -268,7 +313,10 @@ public class Extractor implements AutoCloseable {
                 nDotsPrinted++;
             }
         }
-        if (nDotsPrinted < 5) System.out.print(".");
+        while (nDotsPrinted < 5) {
+            System.out.print(".");
+            nDotsPrinted++;
+        }
         //单独处理最后一个镜头
         inShotKeyFrameExtraction_Invar(vecs, boundaryIDs.get(boundaryIDs.size() - 1), N_EFFECTIVE_FRAME);
         System.out.println("OK");
@@ -820,7 +868,12 @@ public class Extractor implements AutoCloseable {
 
             }
 
-            if (printDots && nDotsPrinted < 5) System.out.print(".");
+            if (printDots) {
+                while (nDotsPrinted < 5) {
+                    System.out.print(".");
+                    nDotsPrinted++;
+                }
+            }
         }
     }
 
